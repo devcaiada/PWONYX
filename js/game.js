@@ -61,18 +61,30 @@ window.PWONYX = window.PWONYX || {};
             }
             window.addEventListener('resize', () => this.resize());
 
-            // Parallax relief layers & Transition state (inspired by Creo - Flow)
+            // Parallax layers & Transition state (Creo - Flow Minimalist Organic Sci-Fi)
             this.parallax = {
                 camX: 0,
                 camY: 0,
                 targetCamX: 0,
-                targetCamY: 0
+                targetCamY: 0,
+                mouseOffsetX: 0,
+                mouseOffsetY: 0,
+                bgX: 0,
+                bgY: 0,
+                coreX: 0,
+                coreY: 0,
+                fgX: 0,
+                fgY: 0,
+                rot3D: 0
             };
             this.menuTime = 0;
+            this.flowClickPulse = 0;
             this.transitionProgress = 0;
             this.transitionTimer = 0;
             this.transitionDuration = 0.95;
             this.pendingModeId = null;
+            this.flowParticles = [];
+            this.initFlowParticles();
 
             // Parallax image assets
             this.parallaxBgImg = new Image();
@@ -176,6 +188,92 @@ window.PWONYX = window.PWONYX || {};
         get width() { return this.viewWidth; }
         get height() { return this.viewHeight; }
 
+        initFlowParticles() {
+            this.flowParticles = [];
+            // Layer 0: Background space dust & faint cyan bokeh (factor 0.02)
+            for (let i = 0; i < 42; i++) {
+                this.flowParticles.push({
+                    layer: 0,
+                    factor: 0.02,
+                    nx: Math.random(),
+                    ny: Math.random(),
+                    vx: (Math.random() - 0.5) * 0.008,
+                    vy: (Math.random() - 0.5) * 0.006 - 0.003,
+                    r: 1.0 + Math.random() * 2.6,
+                    alpha: 0.08 + Math.random() * 0.26,
+                    phase: Math.random() * Math.PI * 2,
+                    isDark: false,
+                    isBokeh: Math.random() > 0.45
+                });
+            }
+            // Layer 1: Midground organic specks & soft bokeh near the core/trail (factor 0.05)
+            for (let i = 0; i < 20; i++) {
+                const isDark = i < 9;
+                this.flowParticles.push({
+                    layer: 1,
+                    factor: 0.05,
+                    nx: 0.2 + Math.random() * 0.65,
+                    ny: 0.15 + Math.random() * 0.65,
+                    vx: (Math.random() - 0.5) * 0.012,
+                    vy: (Math.random() - 0.5) * 0.01,
+                    r: isDark ? 2.5 + Math.random() * 4.5 : 2.2 + Math.random() * 5.0,
+                    aspect: 0.55 + Math.random() * 0.4,
+                    angle: Math.random() * Math.PI,
+                    alpha: isDark ? 0.45 + Math.random() * 0.35 : 0.12 + Math.random() * 0.22,
+                    phase: Math.random() * Math.PI * 2,
+                    isDark,
+                    isBokeh: !isDark
+                });
+            }
+            // Layer 2: Foreground out-of-focus dark silhouettes & bokeh dust (factor 0.08)
+            const fgPresets = [
+                // Iconic dark out-of-focus fragments silhouetted against the top/right cyan glow (like reference art)
+                { nx: 0.515, ny: 0.22, r: 7.5, aspect: 0.48, angle: 0.65, isDark: true, alpha: 0.78 },
+                { nx: 0.735, ny: 0.25, r: 5.5, aspect: 0.62, angle: -0.4, isDark: true, alpha: 0.72 },
+                { nx: 0.79, ny: 0.325, r: 6.2, aspect: 0.55, angle: 0.35, isDark: true, alpha: 0.68 },
+                { nx: 0.59, ny: 0.10, r: 3.8, aspect: 0.7, angle: 0.2, isDark: true, alpha: 0.52 },
+                { nx: 0.81, ny: 0.49, r: 4.2, aspect: 0.65, angle: -0.3, isDark: true, alpha: 0.55 },
+                { nx: 0.695, ny: 0.66, r: 6.8, aspect: 0.6, angle: 0.5, isDark: true, alpha: 0.48 },
+                { nx: 0.34, ny: 0.67, r: 6.5, aspect: 0.75, angle: -0.2, isDark: false, alpha: 0.22 },
+                { nx: 0.24, ny: 0.75, r: 4.5, aspect: 0.85, angle: 0.1, isDark: false, alpha: 0.25 }
+            ];
+            fgPresets.forEach((p) => {
+                this.flowParticles.push({
+                    layer: 2,
+                    factor: 0.08,
+                    nx: p.nx,
+                    ny: p.ny,
+                    vx: (Math.random() - 0.5) * 0.006,
+                    vy: (Math.random() - 0.5) * 0.005,
+                    r: p.r,
+                    aspect: p.aspect,
+                    angle: p.angle,
+                    alpha: p.alpha,
+                    phase: Math.random() * Math.PI * 2,
+                    isDark: p.isDark,
+                    isBokeh: !p.isDark
+                });
+            });
+            for (let i = 0; i < 16; i++) {
+                const isDark = i % 3 === 0;
+                this.flowParticles.push({
+                    layer: 2,
+                    factor: 0.08,
+                    nx: Math.random(),
+                    ny: Math.random(),
+                    vx: (Math.random() - 0.5) * 0.015,
+                    vy: (Math.random() - 0.5) * 0.012,
+                    r: isDark ? 3.2 + Math.random() * 5.0 : 3.5 + Math.random() * 7.5,
+                    aspect: 0.5 + Math.random() * 0.45,
+                    angle: Math.random() * Math.PI,
+                    alpha: isDark ? 0.38 + Math.random() * 0.35 : 0.08 + Math.random() * 0.18,
+                    phase: Math.random() * Math.PI * 2,
+                    isDark,
+                    isBokeh: !isDark
+                });
+            }
+        }
+
         bindInputs() {
             const updateMousePos = (clientX, clientY) => {
                 const rect = this.canvas.getBoundingClientRect();
@@ -186,8 +284,12 @@ window.PWONYX = window.PWONYX || {};
                 this.input.mouseActive = true;
 
                 // Parallax camera normalized from -1 to 1
-                this.parallax.targetCamX = Math.max(-1, Math.min(1, ((clientX - rect.left) / rect.width - 0.5) * 2));
-                this.parallax.targetCamY = Math.max(-1, Math.min(1, ((clientY - rect.top) / rect.height - 0.5) * 2));
+                const normX = Math.max(-1, Math.min(1, ((clientX - rect.left) / rect.width - 0.5) * 2));
+                const normY = Math.max(-1, Math.min(1, ((clientY - rect.top) / rect.height - 0.5) * 2));
+                this.parallax.targetCamX = normX;
+                this.parallax.targetCamY = normY;
+                this.parallax.mouseOffsetX = normX * (this.viewWidth * 0.5);
+                this.parallax.mouseOffsetY = normY * (this.viewHeight * 0.5);
             };
 
             this.canvas.addEventListener('mousemove', (e) => {
@@ -199,7 +301,13 @@ window.PWONYX = window.PWONYX || {};
                     if (this.state === 'playing') {
                         this.fireGhostPaddle('player1');
                     } else if (this.state === 'menu') {
-                        this.triggerStartTransition();
+                        // Unlock & start intro music so the orb pulses to the kick via Web Audio API
+                        if (!Audio.isPlaying) {
+                            Audio.startMusic();
+                            Audio.setLowPassEffect('normal');
+                            Audio.updateAdaptiveLayers(4);
+                        }
+                        this.flowClickPulse = 1.0;
                     }
                 }
             });
@@ -217,7 +325,12 @@ window.PWONYX = window.PWONYX || {};
                     if (this.state === 'playing' && e.touches.length >= 2) {
                         this.fireGhostPaddle('player1');
                     } else if (this.state === 'menu') {
-                        this.triggerStartTransition();
+                        if (!Audio.isPlaying) {
+                            Audio.startMusic();
+                            Audio.setLowPassEffect('normal');
+                            Audio.updateAdaptiveLayers(4);
+                        }
+                        this.flowClickPulse = 1.0;
                     }
                 }
             }, { passive: true });
@@ -437,9 +550,11 @@ window.PWONYX = window.PWONYX || {};
         }
 
         loop(now) {
+            requestAnimationFrame((t) => this.loop(t));
+
             const rawDt = (now - this.lastFrameTime) / 1000;
             this.lastFrameTime = now;
-            const dt = Math.min(rawDt, 0.05); // clamp max delta time
+            const dt = Math.min(Math.max(rawDt, 0), 0.05); // clamp max delta time
 
             if (rawDt > 0) {
                 this.fps = 1 / rawDt;
@@ -459,14 +574,60 @@ window.PWONYX = window.PWONYX || {};
             this.physicsMs = performance.now() - t0;
 
             this.render(dt);
-            requestAnimationFrame((t) => this.loop(t));
         }
 
         updateMenuParallax(dt) {
             this.menuTime += dt;
-            // Smooth camera inertia for mouse parallax
+            if (this.flowClickPulse > 0) {
+                this.flowClickPulse = Math.max(0, this.flowClickPulse - dt * 2.2);
+            }
+
+            // Smooth lerp parallax across the 3 depth layers:
+            // Layer 0 (Background particles & rays): factor 0.02
+            const targetBgX = this.parallax.mouseOffsetX * 0.02;
+            const targetBgY = this.parallax.mouseOffsetY * 0.02;
+            this.parallax.bgX += (targetBgX - this.parallax.bgX) * 0.08;
+            this.parallax.bgY += (targetBgY - this.parallax.bgY) * 0.08;
+
+            // Layer 1 (Central emissive core + wavy trail & subtle 3D rotation): factor 0.05
+            const targetCoreX = this.parallax.mouseOffsetX * 0.05;
+            const targetCoreY = this.parallax.mouseOffsetY * 0.05;
+            this.parallax.coreX += (targetCoreX - this.parallax.coreX) * 0.08;
+            this.parallax.coreY += (targetCoreY - this.parallax.coreY) * 0.08;
+            const targetRot = (this.parallax.mouseOffsetX / Math.max(1, this.viewWidth * 0.5)) * 0.14;
+            this.parallax.rot3D += (targetRot - this.parallax.rot3D) * 0.05;
+
+            // Layer 2 (Foreground bokeh & silhouette dust): factor 0.08
+            const targetFgX = this.parallax.mouseOffsetX * 0.08;
+            const targetFgY = this.parallax.mouseOffsetY * 0.08;
+            this.parallax.fgX += (targetFgX - this.parallax.fgX) * 0.08;
+            this.parallax.fgY += (targetFgY - this.parallax.fgY) * 0.08;
+
+            // Legacy normalized camera for transition effects
             this.parallax.camX += (this.parallax.targetCamX - this.parallax.camX) * dt * 4.2;
             this.parallax.camY += (this.parallax.targetCamY - this.parallax.camY) * dt * 4.2;
+
+            // Subtle parallax shift on the DOM title/play block
+            const menuCenter = document.getElementById('flow-menu-center');
+            if (menuCenter && this.state === 'menu') {
+                const tx = (-this.parallax.coreX * 0.35).toFixed(2);
+                const ty = (-this.parallax.coreY * 0.35).toFixed(2);
+                menuCenter.style.transform = `translate3d(${tx}px, ${ty}px, 0)`;
+            }
+
+            // Update floating space dust / bokeh across layers
+            if (this.flowParticles) {
+                for (let i = 0; i < this.flowParticles.length; i++) {
+                    const p = this.flowParticles[i];
+                    p.nx += p.vx * dt;
+                    p.ny += p.vy * dt;
+                    if (p.nx < -0.1) p.nx = 1.1;
+                    if (p.nx > 1.1) p.nx = -0.1;
+                    if (p.ny < -0.1) p.ny = 1.1;
+                    if (p.ny > 1.1) p.ny = -0.1;
+                }
+            }
+
             this.updateParticles(dt);
         }
 
@@ -1107,150 +1268,408 @@ window.PWONYX = window.PWONYX || {};
             t.globalCompositeOperation = 'source-over';
         }
 
+        traceOrganicContour(ctx, cx, cy, rx, ry, phase, rotOffset, lobeAmp = 0.09) {
+            const steps = 64;
+            ctx.beginPath();
+            for (let s = 0; s <= steps; s++) {
+                const a = (s / steps) * Math.PI * 2;
+                const wave =
+                    1 +
+                    lobeAmp * Math.sin(a * 3 + phase) +
+                    (lobeAmp * 0.72) * Math.cos(a * 2 - phase * 0.7 + rotOffset) +
+                    (lobeAmp * 0.45) * Math.sin(a * 5 + phase * 1.3);
+                const px = cx + Math.cos(a) * rx * wave;
+                const py = cy + Math.sin(a) * ry * wave;
+                if (s === 0) ctx.moveTo(px, py);
+                else ctx.lineTo(px, py);
+            }
+            ctx.closePath();
+        }
+
+        renderFlowParticleLayer(ctx, layerIndex, offsetX, offsetY, vw, vh, time, kickEnergy, fadeAlpha = 1) {
+            if (!this.flowParticles) return;
+            ctx.save();
+            for (let i = 0; i < this.flowParticles.length; i++) {
+                const p = this.flowParticles[i];
+                if (p.layer !== layerIndex) continue;
+
+                const px = p.nx * vw - offsetX;
+                const py = p.ny * vh - offsetY;
+                const r = Math.max(0.5, p.r * (Math.min(vw, vh) / 768));
+                const twinkle = 0.78 + 0.22 * Math.sin(time * 1.7 + p.phase);
+                const alpha = Math.min(1, p.alpha * twinkle * fadeAlpha);
+
+                if (p.isDark) {
+                    // Out-of-focus dark silhouette dust/fragments (signature Creo - Flow depth cue)
+                    const aspect = p.aspect || 0.65;
+                    const angle = (p.angle || 0) + time * 0.08;
+                    const dg = ctx.createRadialGradient(px, py, r * 0.1, px, py, r * 1.35);
+                    dg.addColorStop(0, `rgba(2, 7, 13, ${alpha})`);
+                    dg.addColorStop(0.58, `rgba(5, 14, 24, ${alpha * 0.65})`);
+                    dg.addColorStop(1, 'rgba(5, 14, 24, 0)');
+                    ctx.fillStyle = dg;
+                    ctx.beginPath();
+                    ctx.ellipse(
+                        px,
+                        py,
+                        r * 1.35,
+                        r * 1.35 * aspect,
+                        angle,
+                        0,
+                        Math.PI * 2
+                    );
+                    ctx.fill();
+                } else {
+                    // Soft cyan/white space dust & bokeh
+                    const boost = layerIndex === 2 ? kickEnergy * 0.18 : 0;
+                    const lg = ctx.createRadialGradient(px, py, 0, px, py, r * 2.2);
+                    if (p.isBokeh) {
+                        lg.addColorStop(0, `rgba(240, 252, 255, ${Math.min(1, alpha + boost)})`);
+                        lg.addColorStop(0.42, `rgba(145, 224, 255, ${(alpha + boost) * 0.45})`);
+                        lg.addColorStop(1, 'rgba(70, 175, 235, 0)');
+                    } else {
+                        lg.addColorStop(0, `rgba(150, 228, 255, ${Math.min(1, alpha + boost)})`);
+                        lg.addColorStop(0.48, `rgba(65, 165, 225, ${(alpha + boost) * 0.4})`);
+                        lg.addColorStop(1, 'rgba(25, 95, 155, 0)');
+                    }
+                    ctx.fillStyle = lg;
+                    ctx.beginPath();
+                    ctx.arc(px, py, r * 2.2, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+            ctx.restore();
+        }
+
         renderParallaxMenu(ctx, pulse, dt) {
             const time = this.menuTime;
-            const camX = this.parallax.camX;
-            const camY = this.parallax.camY;
+            const vw = this.viewWidth;
+            const vh = this.viewHeight;
+            const minDim = Math.min(vw, vh);
+
+            // Parallaxes updated with smooth lerp (0.02, 0.05, 0.08)
+            const bgX = this.parallax.bgX || 0;
+            const bgY = this.parallax.bgY || 0;
+            const coreX = this.parallax.coreX || 0;
+            const coreY = this.parallax.coreY || 0;
+            const fgX = this.parallax.fgX || 0;
+            const fgY = this.parallax.fgY || 0;
+            const rot3D = this.parallax.rot3D || 0;
+
             const isTrans = this.state === 'transitioning';
-            const t = this.transitionProgress; // 0 to 1
-            const easeT = t * t * (3 - 2 * t); // smoothstep
+            const t = this.transitionProgress || 0;
+            const easeT = t * t * (3 - 2 * t);
+            const sceneFade = Math.max(0, 1 - easeT * 1.15);
 
-            // 1. Cosmic Nebula Background Layer (fills full view)
-            if (this.parallaxBgLoaded && this.parallaxBgImg) {
-                const bgScale = 1.14 + easeT * 0.35;
-                const bw = this.viewWidth * bgScale;
-                const bh = this.viewHeight * bgScale;
-                const bx = (this.viewWidth - bw) / 2 - camX * 28;
-                const by = (this.viewHeight - bh) / 2 - camY * 20;
-                ctx.drawImage(this.parallaxBgImg, bx, by, bw, bh);
-            } else {
-                // Procedural deep space gradient
-                const grad = ctx.createRadialGradient(
-                    this.viewWidth / 2 - camX * 40, this.viewHeight * 0.4 - camY * 30, 80,
-                    this.viewWidth / 2, this.viewHeight / 2, this.viewWidth * 0.75
+            // Web Audio API low-frequency (kick/bass) reactivity + organic idle breathing
+            const bass = Audio.bassEnergy || 0;
+            const beat = Audio.beatPulse || 0;
+            const idleBreath = Math.sin(time * 1.9) * 0.5 + 0.5;
+            const kickEnergy = Math.max(bass * 1.15, beat * 0.9, idleBreath * 0.16) + (this.flowClickPulse || 0) * 0.45;
+
+            // =========================================================================
+            // 1. DEEP PETROL / MARINE BLUE ATMOSPHERIC BACKGROUND + TOP-RIGHT ILLUMINATION
+            // =========================================================================
+            const bgGrad = ctx.createLinearGradient(vw * 0.12, vh * 0.95, vw * 0.92, vh * 0.04);
+            bgGrad.addColorStop(0, '#020509');
+            bgGrad.addColorStop(0.35, '#05101c');
+            bgGrad.addColorStop(0.7, '#0d2942');
+            bgGrad.addColorStop(1, '#1d4d6e');
+            ctx.fillStyle = bgGrad;
+            ctx.fillRect(0, 0, vw, vh);
+
+            // Radial cyan-petrol atmospheric glow emanating from top-right corner
+            const trX = vw * 0.88 - bgX * 1.4;
+            const trY = vh * 0.10 - bgY * 1.4;
+            const topRightGlow = ctx.createRadialGradient(trX, trY, minDim * 0.02, trX, trY, Math.max(vw, vh) * 0.95);
+            topRightGlow.addColorStop(0, `rgba(115, 200, 242, ${(0.38 + kickEnergy * 0.08) * sceneFade})`);
+            topRightGlow.addColorStop(0.28, `rgba(54, 132, 178, ${0.28 * sceneFade})`);
+            topRightGlow.addColorStop(0.62, `rgba(16, 48, 76, ${0.14 * sceneFade})`);
+            topRightGlow.addColorStop(1, 'rgba(3, 8, 15, 0)');
+            ctx.fillStyle = topRightGlow;
+            ctx.fillRect(0, 0, vw, vh);
+
+            // Soft Volumetric Light Shafts (God Rays) from top-right to bottom-left
+            ctx.save();
+            ctx.globalCompositeOperation = 'screen';
+            const rayOriginX = vw * 1.05 - bgX * 1.6;
+            const rayOriginY = -vh * 0.08 - bgY * 1.6;
+            const rayAngles = [2.32, 2.41, 2.49, 2.57, 2.66, 2.75];
+            const rayWidths = [0.09, 0.14, 0.07, 0.12, 0.08, 0.11];
+            const rayLen = Math.hypot(vw, vh) * 1.35;
+
+            for (let r = 0; r < rayAngles.length; r++) {
+                const shimmer = Math.sin(time * 0.55 + r * 1.7) * 0.015;
+                const angle = rayAngles[r] + shimmer + rot3D * 0.08;
+                const halfSpread = rayWidths[r];
+                const x1 = rayOriginX + Math.cos(angle - halfSpread) * rayLen;
+                const y1 = rayOriginY + Math.sin(angle - halfSpread) * rayLen;
+                const x2 = rayOriginX + Math.cos(angle + halfSpread) * rayLen;
+                const y2 = rayOriginY + Math.sin(angle + halfSpread) * rayLen;
+
+                const rayGrad = ctx.createLinearGradient(
+                    rayOriginX,
+                    rayOriginY,
+                    rayOriginX + Math.cos(angle) * rayLen * 0.85,
+                    rayOriginY + Math.sin(angle) * rayLen * 0.85
                 );
-                grad.addColorStop(0, '#101432');
-                grad.addColorStop(0.5, '#070918');
-                grad.addColorStop(1, '#020206');
-                ctx.fillStyle = grad;
-                ctx.fillRect(0, 0, this.viewWidth, this.viewHeight);
-            }
+                const baseRayAlpha = (0.048 + (r % 2) * 0.022 + kickEnergy * 0.018) * sceneFade;
+                rayGrad.addColorStop(0, `rgba(155, 226, 255, ${baseRayAlpha * 1.3})`);
+                rayGrad.addColorStop(0.35, `rgba(92, 182, 230, ${baseRayAlpha})`);
+                rayGrad.addColorStop(0.75, `rgba(34, 98, 145, ${baseRayAlpha * 0.35})`);
+                rayGrad.addColorStop(1, 'rgba(10, 35, 60, 0)');
 
-            // Dark vignette overlay to guarantee high-contrast readability
-            ctx.fillStyle = `rgba(2, 3, 8, ${0.4 + easeT * 0.55})`;
-            ctx.fillRect(0, 0, this.viewWidth, this.viewHeight);
-
-            // 2. Low-Poly Mountain Relief Layer
-            if (this.parallaxReliefLoaded && this.parallaxReliefImg) {
-                ctx.save();
-                // During transition, relief splits/slides down and away
-                const rAlpha = Math.max(0, 1 - easeT * 1.3);
-                ctx.globalAlpha = rAlpha;
-
-                const rScale = 1.06 + pulse * 0.02;
-                const rw = this.viewWidth * rScale;
-                const imgRatio = this.parallaxReliefImg.height / Math.max(1, this.parallaxReliefImg.width);
-                const rh = rw * imgRatio;
-                const rx = (this.viewWidth - rw) / 2 - camX * 52;
-                const ry = this.viewHeight - rh * 0.92 - camY * 32 + easeT * 380;
-
-                ctx.drawImage(this.parallaxReliefImg, rx, ry, rw, rh);
-                ctx.restore();
-            }
-
-            // 3. Flowing 3D Topographic Contour Curves (Curvas de Nível Neon em Relevo)
-            ctx.save();
-            const contourAlpha = Math.max(0, 1 - easeT * 1.2);
-            ctx.globalAlpha = contourAlpha;
-
-            const lines = [
-                { yBase: this.viewHeight * 0.65, amp: 24, freq: 0.005, speed: 1.4, color: '#9b5de5', shift: 65 },
-                { yBase: this.viewHeight * 0.74, amp: 32, freq: 0.004, speed: 1.1, color: '#00bbf9', shift: 88 },
-                { yBase: this.viewHeight * 0.84, amp: 40, freq: 0.0035, speed: 0.8, color: '#00f5d4', shift: 115 }
-            ];
-
-            lines.forEach((line) => {
-                ctx.strokeStyle = line.color;
-                ctx.shadowColor = line.color;
-                ctx.shadowBlur = 10 + pulse * 14;
-                ctx.lineWidth = 2 + pulse * 1.5;
-
+                ctx.fillStyle = rayGrad;
                 ctx.beginPath();
-                const offsetX = -camX * line.shift;
-                const offsetY = -camY * (line.shift * 0.6);
+                ctx.moveTo(rayOriginX, rayOriginY);
+                ctx.lineTo(x1, y1);
+                ctx.lineTo(x2, y2);
+                ctx.closePath();
+                ctx.fill();
+            }
+            ctx.restore();
 
-                for (let x = -20; x <= this.viewWidth + 20; x += 16) {
-                    const wave1 = Math.sin((x + offsetX) * line.freq + time * line.speed);
-                    const wave2 = Math.cos((x + offsetX) * (line.freq * 2.1) - time * 0.7) * 0.45;
-                    const audioBump = pulse * 16 * Math.sin((x / this.viewWidth) * Math.PI);
-                    const y = line.yBase + offsetY + (wave1 + wave2) * line.amp - audioBump;
+            // Deep bottom-left abyssal shadow vignette for rich contrast
+            const blShadow = ctx.createRadialGradient(
+                vw * 0.08, vh * 0.92, minDim * 0.05,
+                vw * 0.18, vh * 0.85, Math.max(vw, vh) * 0.85
+            );
+            blShadow.addColorStop(0, 'rgba(1, 3, 7, 0.82)');
+            blShadow.addColorStop(0.55, 'rgba(2, 6, 12, 0.38)');
+            blShadow.addColorStop(1, 'rgba(2, 6, 12, 0)');
+            ctx.fillStyle = blShadow;
+            ctx.fillRect(0, 0, vw, vh);
 
-                    if (x === -20) ctx.moveTo(x, y);
-                    else ctx.lineTo(x, y);
+            // =========================================================================
+            // 2. LAYER 0: BACKGROUND PARTICLES (Factor 0.02)
+            // =========================================================================
+            this.renderFlowParticleLayer(ctx, 0, bgX, bgY, vw, vh, time, kickEnergy, sceneFade);
+
+            // =========================================================================
+            // 3. CENTRAL ORGANIC CORE + TRANSLUCENT WAVY TRAIL SHELLS (Factor 0.05)
+            // =========================================================================
+            // Positioned slightly right of center & upper-mid so the trail flows left
+            // and "P W O N Y X" / "P L A Y" sits cleanly right underneath the sphere.
+            const floatY = Math.sin(time * 1.35) * 6;
+            const floatX = Math.cos(time * 0.95) * 4;
+            const baseCoreX = vw * 0.54 - coreX * 1.15 + floatX;
+            const baseCoreY = vh * 0.455 - coreY * 1.15 + floatY - (isTrans ? easeT * 420 : 0);
+
+            // Audio-reactive scale & bloom intensity on low-frequency kick
+            const kickScale = 1 + kickEnergy * 0.075 + (isTrans ? easeT * 0.35 : 0);
+            const coreRadius = minDim * 0.148 * kickScale;
+
+            // Trail direction vector pointing toward the upper-left (~ -163 deg, matching Creo - Flow)
+            const trailAngle = -2.84 + rot3D * 0.28 + Math.sin(time * 0.7) * 0.025;
+            const dirX = Math.cos(trailAngle);
+            const dirY = Math.sin(trailAngle);
+            const perpX = -dirY;
+            const perpY = dirX;
+
+            // --- 3A. Translucent Wavy Trail Silhouette Shells (Back-to-Front: 7 down to 1) ---
+            const numShells = 7;
+            const maxTrailDist = coreRadius * 2.55;
+
+            ctx.save();
+            for (let i = numShells; i >= 1; i--) {
+                const frac = i / numShells; // 1.0 (furthest left) -> 0.14 (closest to core)
+                // Subtle 3D parallax foreshortening when rotating with mouse
+                const depth3DShift = rot3D * coreRadius * 1.45 * frac;
+                const waveUndulation = Math.sin(time * 1.8 - i * 0.65) * (coreRadius * 0.045 * frac);
+
+                const sx = baseCoreX + dirX * (maxTrailDist * Math.pow(frac, 0.92)) + depth3DShift + perpX * waveUndulation;
+                const sy = baseCoreY + dirY * (maxTrailDist * Math.pow(frac, 0.92)) + perpY * waveUndulation;
+
+                // Shells taper down as they trail to the upper-left and compress slightly along the trail axis
+                const shellScale = (1 - frac * 0.54) * (1 + kickEnergy * 0.03 * (1 - frac));
+                const rx = coreRadius * shellScale * (0.86 + 0.06 * Math.cos(rot3D));
+                const ry = coreRadius * shellScale * 1.04;
+                const shellPhase = i * 1.35 + time * 0.55;
+
+                ctx.save();
+                ctx.translate(sx, sy);
+                ctx.rotate(trailAngle + Math.PI + rot3D * 0.2 * frac);
+
+                // Trace organic wavy jellyfish-bell / frozen-smoke silhouette
+                this.traceOrganicContour(ctx, 0, 0, rx, ry, shellPhase, rot3D, 0.085 + frac * 0.03);
+
+                // Translucent smoky cyan-petrol fill with brighter rim toward the core
+                const shellAlpha = (0.11 + (1 - frac) * 0.22) * sceneFade;
+                const fillGrad = ctx.createLinearGradient(-rx, -ry * 0.3, rx * 1.1, ry * 0.4);
+                fillGrad.addColorStop(0, `rgba(14, 42, 68, ${shellAlpha * 0.55})`);
+                fillGrad.addColorStop(0.55, `rgba(62, 138, 185, ${shellAlpha * 0.85})`);
+                fillGrad.addColorStop(1, `rgba(175, 230, 255, ${shellAlpha * 1.25})`);
+                ctx.fillStyle = fillGrad;
+                ctx.fill();
+
+                // Crisp gossamer rim highlight (characteristic translucent layered ridge in Creo - Flow)
+                ctx.lineWidth = 1.2 + (1 - frac) * 1.3;
+                ctx.strokeStyle = `rgba(182, 232, 255, ${(0.16 + (1 - frac) * 0.34 + kickEnergy * 0.08) * sceneFade})`;
+                ctx.shadowColor = '#7fd8ff';
+                ctx.shadowBlur = 10 + (1 - frac) * 12;
+                ctx.stroke();
+
+                // Delicate internal curved membrane ribs (frozen smoke / jellyfish striations)
+                ctx.shadowBlur = 0;
+                ctx.strokeStyle = `rgba(195, 238, 255, ${(0.07 + (1 - frac) * 0.12) * sceneFade})`;
+                ctx.lineWidth = 0.85;
+                for (let rib = -1; rib <= 1; rib++) {
+                    ctx.beginPath();
+                    const ribY = rib * ry * 0.36;
+                    ctx.moveTo(-rx * 0.65, ribY * 0.7);
+                    ctx.quadraticCurveTo(
+                        0,
+                        ribY + Math.sin(shellPhase + rib) * ry * 0.14,
+                        rx * 0.78,
+                        ribY * 0.85
+                    );
+                    ctx.stroke();
                 }
-                ctx.stroke();
-            });
-            ctx.restore();
 
-            // 4. Levitating Center Orb (The Interactive Core Ball)
-            const cx = this.arenaX + this.arenaWidth / 2 - camX * 18;
-            let cy = this.arenaY + this.arenaHeight / 2 - 14 - camY * 14 + Math.sin(time * 3.0) * 10;
-
-            if (isTrans) {
-                // Rocket upward on click!
-                cy -= easeT * 550;
-            }
-
-            // Orbiting aura rings
-            const orbPulse = Math.sin(time * 4) * 0.5 + 0.5;
-            const ringR = 24 + orbPulse * 16 + (isTrans ? easeT * 60 : 0);
-            ctx.save();
-            ctx.strokeStyle = `rgba(0, 245, 212, ${Math.max(0, 0.4 - (isTrans ? easeT * 0.4 : 0))})`;
-            ctx.lineWidth = 2;
-            ctx.beginPath();
-            ctx.arc(cx, cy, ringR, 0, Math.PI * 2);
-            ctx.stroke();
-
-            // Ball glow
-            ctx.shadowColor = '#00f5d4';
-            ctx.shadowBlur = 24 + pulse * 20;
-            ctx.fillStyle = '#00f5d4';
-            ctx.beginPath();
-            ctx.arc(cx, cy, 9 + (isTrans ? 3 : 0), 0, Math.PI * 2);
-            ctx.fill();
-
-            ctx.fillStyle = '#ffffff';
-            ctx.beginPath();
-            ctx.arc(cx, cy, 5, 0, Math.PI * 2);
-            ctx.fill();
-
-            // Stretch trail if transitioning upward
-            if (isTrans && easeT > 0.05) {
-                ctx.strokeStyle = '#00f5d4';
-                ctx.lineWidth = 14 * (1 - easeT);
-                ctx.lineCap = 'round';
-                ctx.beginPath();
-                ctx.moveTo(cx, cy);
-                ctx.lineTo(cx, cy + easeT * 180);
-                ctx.stroke();
-            }
-            ctx.restore();
-
-            // Render particles & shockwaves during transition
-            this.renderParticles(ctx);
-
-            // In menu mode, draw subtle pulsing prompt under the orb
-            if (!isTrans) {
-                ctx.save();
-                ctx.textAlign = 'center';
-                ctx.font = "700 12px 'Orbitron', system-ui, sans-serif";
-                const textAlpha = 0.55 + Math.sin(time * 3.2) * 0.35;
-                ctx.fillStyle = `rgba(0, 245, 212, ${textAlpha})`;
-                ctx.shadowColor = '#00f5d4';
-                ctx.shadowBlur = 8;
-                ctx.fillText('CLIQUE NA TELA PARA INICIAR', this.arenaX + this.arenaWidth / 2, this.arenaY + this.arenaHeight / 2 + 54);
                 ctx.restore();
             }
+            ctx.restore();
+
+            // --- 3B. Intense Outer Cyan-Blue Atmospheric Bloom around Central Core ---
+            ctx.save();
+            ctx.globalCompositeOperation = 'screen';
+            const bloomRadius = coreRadius * (2.65 + kickEnergy * 0.55);
+            const outerBloom = ctx.createRadialGradient(
+                baseCoreX, baseCoreY, coreRadius * 0.25,
+                baseCoreX, baseCoreY, bloomRadius
+            );
+            const bloomIntensity = Math.min(1, (0.62 + kickEnergy * 0.35) * sceneFade);
+            outerBloom.addColorStop(0, `rgba(235, 250, 255, ${bloomIntensity})`);
+            outerBloom.addColorStop(0.28, `rgba(120, 212, 255, ${bloomIntensity * 0.78})`);
+            outerBloom.addColorStop(0.58, `rgba(42, 138, 204, ${bloomIntensity * 0.36})`);
+            outerBloom.addColorStop(1, 'rgba(12, 55, 95, 0)');
+            ctx.fillStyle = outerBloom;
+            ctx.beginPath();
+            ctx.arc(baseCoreX, baseCoreY, bloomRadius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+
+            // --- 3C. Sculpted Translucent Rim Folds Embracing the Core ---
+            for (let fold = 2; fold >= 1; fold--) {
+                const foldScale = 1.06 + fold * 0.075 + kickEnergy * 0.03;
+                const foldShiftX = -dirX * coreRadius * 0.06 * fold + rot3D * coreRadius * 0.25;
+                const foldShiftY = -dirY * coreRadius * 0.06 * fold;
+
+                ctx.save();
+                ctx.translate(baseCoreX + foldShiftX, baseCoreY + foldShiftY);
+                ctx.rotate(rot3D * 0.18);
+                this.traceOrganicContour(
+                    ctx,
+                    0,
+                    0,
+                    coreRadius * foldScale,
+                    coreRadius * foldScale * 0.96,
+                    time * 0.8 + fold * 2.1,
+                    rot3D,
+                    0.065
+                );
+                const foldGrad = ctx.createRadialGradient(
+                    coreRadius * 0.15, -coreRadius * 0.1, coreRadius * 0.2,
+                    0, 0, coreRadius * foldScale * 1.1
+                );
+                foldGrad.addColorStop(0, `rgba(255, 255, 255, ${0.45 * sceneFade})`);
+                foldGrad.addColorStop(0.65, `rgba(155, 222, 255, ${0.32 * sceneFade})`);
+                foldGrad.addColorStop(1, `rgba(70, 165, 225, ${0.08 * sceneFade})`);
+                ctx.fillStyle = foldGrad;
+                ctx.fill();
+
+                ctx.lineWidth = 1.4;
+                ctx.strokeStyle = `rgba(200, 242, 255, ${(0.38 + kickEnergy * 0.15) * sceneFade})`;
+                ctx.stroke();
+                ctx.restore();
+            }
+
+            // --- 3D. White-Hot Emissive Central Core (with subtle warm cream/rose center & cyan edge reflections) ---
+            ctx.save();
+            ctx.translate(baseCoreX, baseCoreY);
+            ctx.rotate(rot3D * 0.12);
+
+            this.traceOrganicContour(
+                ctx,
+                0,
+                0,
+                coreRadius * 1.02,
+                coreRadius * 0.97,
+                time * 0.65,
+                rot3D,
+                0.052
+            );
+
+            // Inner gradient matching Creo - Flow's white-hot right dome, subtle warm blush core, and icy-cyan left rim
+            const coreGrad = ctx.createRadialGradient(
+                coreRadius * 0.22 - rot3D * coreRadius * 0.4,
+                -coreRadius * 0.08,
+                coreRadius * 0.08,
+                0,
+                0,
+                coreRadius * 1.08
+            );
+            coreGrad.addColorStop(0, `rgba(255, 255, 255, ${sceneFade})`);
+            coreGrad.addColorStop(0.42, `rgba(255, 250, 247, ${sceneFade})`);
+            coreGrad.addColorStop(0.68, `rgba(244, 232, 232, ${0.98 * sceneFade})`);
+            coreGrad.addColorStop(0.88, `rgba(195, 228, 250, ${0.95 * sceneFade})`);
+            coreGrad.addColorStop(1, `rgba(130, 210, 255, ${0.9 * sceneFade})`);
+
+            ctx.shadowColor = '#9be4ff';
+            ctx.shadowBlur = (34 + kickEnergy * 32) * sceneFade;
+            ctx.fillStyle = coreGrad;
+            ctx.fill();
+
+            // Subtle internal sculptural shading folds inside the white-hot mass (left side relief)
+            ctx.save();
+            ctx.clip();
+            for (let c = 0; c < 3; c++) {
+                const creaseX = -coreRadius * (0.28 + c * 0.22) + rot3D * coreRadius * 0.35;
+                const creaseGrad = ctx.createLinearGradient(
+                    creaseX - coreRadius * 0.25, 0,
+                    creaseX + coreRadius * 0.35, 0
+                );
+                creaseGrad.addColorStop(0, 'rgba(150, 195, 230, 0)');
+                creaseGrad.addColorStop(0.5, `rgba(165, 202, 232, ${0.24 * sceneFade})`);
+                creaseGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+                ctx.fillStyle = creaseGrad;
+                ctx.beginPath();
+                ctx.ellipse(creaseX, 0, coreRadius * 0.32, coreRadius * 0.95, 0.18, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // Tiny warm-dark out-of-focus dust specks drifting across the bright white face (exact detail from reference)
+            const faceSpecks = [
+                { x: 0.08, y: 0.06, r: 0.042, a: 0.26 },
+                { x: 0.26, y: 0.36, r: 0.032, a: 0.32 },
+                { x: -0.38, y: 0.18, r: 0.038, a: 0.22 },
+                { x: -0.14, y: -0.28, r: 0.025, a: 0.18 }
+            ];
+            for (let s = 0; s < faceSpecks.length; s++) {
+                const sp = faceSpecks[s];
+                const sx = (sp.x + Math.sin(time * 0.4 + s) * 0.02) * coreRadius - fgX * 0.15;
+                const sy = (sp.y + Math.cos(time * 0.35 + s) * 0.02) * coreRadius - fgY * 0.15;
+                const sr = sp.r * coreRadius;
+                const sg = ctx.createRadialGradient(sx, sy, 0, sx, sy, sr);
+                sg.addColorStop(0, `rgba(92, 64, 68, ${sp.a * sceneFade})`);
+                sg.addColorStop(0.6, `rgba(128, 96, 102, ${sp.a * 0.45 * sceneFade})`);
+                sg.addColorStop(1, 'rgba(128, 96, 102, 0)');
+                ctx.fillStyle = sg;
+                ctx.beginPath();
+                ctx.arc(sx, sy, sr, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            ctx.restore();
+            ctx.restore();
+
+            // =========================================================================
+            // 4. LAYER 1 & LAYER 2: MID AND FOREGROUND BOKEH & DARK SILHOUETTE DUST
+            // =========================================================================
+            this.renderFlowParticleLayer(ctx, 1, coreX, coreY, vw, vh, time, kickEnergy, sceneFade);
+            this.renderFlowParticleLayer(ctx, 2, fgX, fgY, vw, vh, time, kickEnergy, sceneFade);
+
+            // Render interactive click shockwaves / burst particles
+            this.renderParticles(ctx);
         }
 
         render(dt) {
