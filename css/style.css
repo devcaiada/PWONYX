@@ -155,60 +155,137 @@ button { font: inherit; color: inherit; background: none; border: none; cursor: 
 /* ---------- Creo - Flow Minimalist Organic Sci-Fi Menu Typography ---------- */
 .flow-menu-center {
     position: absolute;
-    bottom: clamp(44px, 9.5vh, 105px);
-    left: 50%;
-    transform: translateX(-50%);
+    bottom: clamp(42px, 8.8vh, 96px);
+    left: 0;
+    right: 0;
+    margin-inline: auto;
+    width: max-content;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 14px;
+    justify-content: center;
+    text-align: center;
+    gap: 12px;
     will-change: transform;
 }
 
 .flow-title {
-    font-family: 'Montserrat', 'Inter', system-ui, sans-serif;
+    font-family: 'Montserrat', 'Orbitron', system-ui, sans-serif;
     font-weight: 600;
-    font-size: clamp(24px, 3.3vw, 42px);
-    letter-spacing: 0.22em;
-    margin-right: -0.22em;
-    color: #f6eff0;
-    text-shadow:
-        0 0 14px rgba(255, 224, 218, 0.58),
-        0 0 34px rgba(125, 200, 255, 0.36),
-        0 2px 10px rgba(0, 0, 0, 0.65);
+    font-size: clamp(26px, 3.6vw, 46px);
+    letter-spacing: 0.34em;
+    padding-left: 0.34em; /* compensates trailing letter-spacing for true optical centering */
+    color: #ffffff;
+    background: linear-gradient(180deg, #ffffff 0%, #f4fafe 52%, #a8e0ff 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    filter:
+        drop-shadow(0 0 12px rgba(255, 240, 235, 0.55))
+        drop-shadow(0 0 28px rgba(110, 205, 255, 0.42))
+        drop-shadow(0 4px 14px rgba(0, 0, 0, 0.75));
+    pointer-events: none;
+    animation: flowTitleBreath 4.2s ease-in-out infinite;
+}
+
+@keyframes flowTitleBreath {
+    0%, 100% {
+        filter:
+            drop-shadow(0 0 12px rgba(255, 240, 235, 0.5))
+            drop-shadow(0 0 26px rgba(110, 205, 255, 0.38))
+            drop-shadow(0 4px 14px rgba(0, 0, 0, 0.75));
+    }
+    50% {
+        filter:
+            drop-shadow(0 0 16px rgba(255, 250, 248, 0.78))
+            drop-shadow(0 0 38px rgba(135, 220, 255, 0.62))
+            drop-shadow(0 4px 14px rgba(0, 0, 0, 0.75));
+    }
+}
+
+.flow-divider {
+    position: relative;
+    width: clamp(120px, 16vw, 210px);
+    height: 1px;
+    background: linear-gradient(
+        90deg,
+        rgba(140, 226, 255, 0) 0%,
+        rgba(140, 226, 255, 0.55) 50%,
+        rgba(140, 226, 255, 0) 100%
+    );
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 2px 0 4px;
     pointer-events: none;
 }
 
+.flow-divider-dot {
+    width: 5px;
+    height: 5px;
+    background: #dff6ff;
+    transform: rotate(45deg);
+    box-shadow: 0 0 10px #8ce2ff, 0 0 18px rgba(140, 226, 255, 0.8);
+}
+
 .flow-play-btn {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     font-family: 'Montserrat', 'Inter', system-ui, sans-serif;
-    font-weight: 500;
-    font-size: clamp(12px, 1.3vw, 17px);
-    letter-spacing: 0.24em;
-    margin-right: -0.24em;
-    color: rgba(235, 244, 252, 0.72);
-    padding: 8px 28px;
+    font-weight: 600;
+    font-size: clamp(12px, 1.25vw, 15px);
+    color: rgba(235, 248, 255, 0.86);
+    padding: 10px 36px;
     border-radius: 999px;
-    text-shadow:
-        0 0 10px rgba(165, 220, 255, 0.35),
-        0 2px 6px rgba(0, 0, 0, 0.6);
+    background: radial-gradient(circle at 50% 50%, rgba(28, 86, 128, 0.28) 0%, rgba(8, 24, 42, 0.14) 100%);
+    border: 1px solid rgba(150, 225, 255, 0.24);
+    box-shadow:
+        0 0 18px rgba(80, 190, 255, 0.12),
+        inset 0 0 12px rgba(150, 225, 255, 0.08);
+    backdrop-filter: blur(6px);
     transition:
         color 0.35s ease,
-        opacity 0.35s ease,
+        border-color 0.35s ease,
+        background 0.35s ease,
+        box-shadow 0.35s ease,
+        transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.flow-play-text {
+    letter-spacing: 0.34em;
+    padding-left: 0.34em; /* keeps text optically centered inside button */
+    text-shadow:
+        0 0 10px rgba(165, 225, 255, 0.45),
+        0 2px 6px rgba(0, 0, 0, 0.65);
+    transition:
         letter-spacing 0.35s cubic-bezier(0.22, 1, 0.36, 1),
-        margin-right 0.35s cubic-bezier(0.22, 1, 0.36, 1),
-        text-shadow 0.35s ease,
-        transform 0.35s ease;
+        padding-left 0.35s cubic-bezier(0.22, 1, 0.36, 1),
+        text-shadow 0.35s ease;
 }
 
 .flow-play-btn:hover {
     color: #ffffff;
-    letter-spacing: 0.32em;
-    margin-right: -0.32em;
+    border-color: rgba(175, 238, 255, 0.68);
+    background: radial-gradient(circle at 50% 50%, rgba(52, 138, 195, 0.42) 0%, rgba(14, 42, 70, 0.26) 100%);
+    box-shadow:
+        0 0 26px rgba(110, 212, 255, 0.42),
+        0 0 52px rgba(70, 175, 245, 0.22),
+        inset 0 0 16px rgba(185, 238, 255, 0.22);
+    transform: translateY(-2px) scale(1.03);
+}
+
+.flow-play-btn:hover .flow-play-text {
+    letter-spacing: 0.44em;
+    padding-left: 0.44em;
     text-shadow:
-        0 0 14px rgba(255, 255, 255, 0.92),
-        0 0 28px rgba(105, 210, 255, 0.78),
-        0 0 48px rgba(70, 175, 245, 0.45);
-    transform: translateY(-1px);
+        0 0 14px rgba(255, 255, 255, 0.95),
+        0 0 28px rgba(115, 215, 255, 0.85);
+}
+
+.flow-play-btn:active {
+    transform: translateY(0) scale(0.98);
 }
 
 .flow-gear-btn {

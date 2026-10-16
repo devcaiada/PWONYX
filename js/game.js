@@ -190,83 +190,102 @@ window.PWONYX = window.PWONYX || {};
 
         initFlowParticles() {
             this.flowParticles = [];
-            // Layer 0: Background space dust & faint cyan bokeh (factor 0.02)
-            for (let i = 0; i < 42; i++) {
+            // Layer 0: Background space dust & faint cyan bokeh (factor 0.02) — steady atmospheric drift across screen
+            for (let i = 0; i < 46; i++) {
+                const speed = 0.018 + Math.random() * 0.028;
+                const driftAngle = Math.PI * (0.78 + (Math.random() - 0.5) * 0.28); // flows upper-right toward lower-left
                 this.flowParticles.push({
                     layer: 0,
                     factor: 0.02,
-                    nx: Math.random(),
-                    ny: Math.random(),
-                    vx: (Math.random() - 0.5) * 0.008,
-                    vy: (Math.random() - 0.5) * 0.006 - 0.003,
-                    r: 1.0 + Math.random() * 2.6,
-                    alpha: 0.08 + Math.random() * 0.26,
+                    nx: Math.random() * 1.2 - 0.1,
+                    ny: Math.random() * 1.2 - 0.1,
+                    vx: Math.cos(driftAngle) * speed,
+                    vy: Math.sin(driftAngle) * speed,
+                    waveAmp: 0.004 + Math.random() * 0.008,
+                    waveFreq: 0.8 + Math.random() * 1.2,
+                    rotSpeed: 0,
+                    r: 1.1 + Math.random() * 2.8,
+                    alpha: 0.12 + Math.random() * 0.28,
                     phase: Math.random() * Math.PI * 2,
                     isDark: false,
-                    isBokeh: Math.random() > 0.45
+                    isBokeh: Math.random() > 0.42
                 });
             }
             // Layer 1: Midground organic specks & soft bokeh near the core/trail (factor 0.05)
-            for (let i = 0; i < 20; i++) {
-                const isDark = i < 9;
+            for (let i = 0; i < 24; i++) {
+                const isDark = i < 10;
+                const speed = 0.036 + Math.random() * 0.045;
+                const driftAngle = Math.PI * (0.80 + (Math.random() - 0.5) * 0.24);
                 this.flowParticles.push({
                     layer: 1,
                     factor: 0.05,
-                    nx: 0.2 + Math.random() * 0.65,
-                    ny: 0.15 + Math.random() * 0.65,
-                    vx: (Math.random() - 0.5) * 0.012,
-                    vy: (Math.random() - 0.5) * 0.01,
-                    r: isDark ? 2.5 + Math.random() * 4.5 : 2.2 + Math.random() * 5.0,
+                    nx: Math.random() * 1.2 - 0.1,
+                    ny: Math.random() * 1.2 - 0.1,
+                    vx: Math.cos(driftAngle) * speed,
+                    vy: Math.sin(driftAngle) * speed,
+                    waveAmp: 0.008 + Math.random() * 0.012,
+                    waveFreq: 1.0 + Math.random() * 1.4,
+                    rotSpeed: (Math.random() - 0.5) * 0.45,
+                    r: isDark ? 2.6 + Math.random() * 4.6 : 2.4 + Math.random() * 5.2,
                     aspect: 0.55 + Math.random() * 0.4,
                     angle: Math.random() * Math.PI,
-                    alpha: isDark ? 0.45 + Math.random() * 0.35 : 0.12 + Math.random() * 0.22,
+                    alpha: isDark ? 0.48 + Math.random() * 0.34 : 0.15 + Math.random() * 0.24,
                     phase: Math.random() * Math.PI * 2,
                     isDark,
                     isBokeh: !isDark
                 });
             }
-            // Layer 2: Foreground out-of-focus dark silhouettes & bokeh dust (factor 0.08)
+            // Layer 2: Foreground out-of-focus dark silhouettes & bokeh dust (factor 0.08) — visibly passing across the lens
             const fgPresets = [
-                // Iconic dark out-of-focus fragments silhouetted against the top/right cyan glow (like reference art)
                 { nx: 0.515, ny: 0.22, r: 7.5, aspect: 0.48, angle: 0.65, isDark: true, alpha: 0.78 },
                 { nx: 0.735, ny: 0.25, r: 5.5, aspect: 0.62, angle: -0.4, isDark: true, alpha: 0.72 },
                 { nx: 0.79, ny: 0.325, r: 6.2, aspect: 0.55, angle: 0.35, isDark: true, alpha: 0.68 },
                 { nx: 0.59, ny: 0.10, r: 3.8, aspect: 0.7, angle: 0.2, isDark: true, alpha: 0.52 },
                 { nx: 0.81, ny: 0.49, r: 4.2, aspect: 0.65, angle: -0.3, isDark: true, alpha: 0.55 },
                 { nx: 0.695, ny: 0.66, r: 6.8, aspect: 0.6, angle: 0.5, isDark: true, alpha: 0.48 },
-                { nx: 0.34, ny: 0.67, r: 6.5, aspect: 0.75, angle: -0.2, isDark: false, alpha: 0.22 },
-                { nx: 0.24, ny: 0.75, r: 4.5, aspect: 0.85, angle: 0.1, isDark: false, alpha: 0.25 }
+                { nx: 0.34, ny: 0.67, r: 6.5, aspect: 0.75, angle: -0.2, isDark: false, alpha: 0.25 },
+                { nx: 0.24, ny: 0.75, r: 4.5, aspect: 0.85, angle: 0.1, isDark: false, alpha: 0.28 }
             ];
-            fgPresets.forEach((p) => {
+            fgPresets.forEach((p, idx) => {
+                const speed = 0.055 + (idx % 3) * 0.022;
+                const driftAngle = Math.PI * (0.81 + ((idx % 5) - 2) * 0.05);
                 this.flowParticles.push({
                     layer: 2,
                     factor: 0.08,
                     nx: p.nx,
                     ny: p.ny,
-                    vx: (Math.random() - 0.5) * 0.006,
-                    vy: (Math.random() - 0.5) * 0.005,
+                    vx: Math.cos(driftAngle) * speed,
+                    vy: Math.sin(driftAngle) * speed,
+                    waveAmp: 0.01 + (idx % 3) * 0.005,
+                    waveFreq: 1.1 + (idx % 4) * 0.25,
+                    rotSpeed: (idx % 2 === 0 ? 1 : -1) * 0.32,
                     r: p.r,
                     aspect: p.aspect,
                     angle: p.angle,
                     alpha: p.alpha,
-                    phase: Math.random() * Math.PI * 2,
+                    phase: idx * 1.1,
                     isDark: p.isDark,
                     isBokeh: !p.isDark
                 });
             });
-            for (let i = 0; i < 16; i++) {
+            for (let i = 0; i < 18; i++) {
                 const isDark = i % 3 === 0;
+                const speed = 0.06 + Math.random() * 0.065;
+                const driftAngle = Math.PI * (0.79 + (Math.random() - 0.5) * 0.25);
                 this.flowParticles.push({
                     layer: 2,
                     factor: 0.08,
-                    nx: Math.random(),
-                    ny: Math.random(),
-                    vx: (Math.random() - 0.5) * 0.015,
-                    vy: (Math.random() - 0.5) * 0.012,
+                    nx: Math.random() * 1.2 - 0.1,
+                    ny: Math.random() * 1.2 - 0.1,
+                    vx: Math.cos(driftAngle) * speed,
+                    vy: Math.sin(driftAngle) * speed,
+                    waveAmp: 0.01 + Math.random() * 0.014,
+                    waveFreq: 1.1 + Math.random() * 1.5,
+                    rotSpeed: (Math.random() - 0.5) * 0.6,
                     r: isDark ? 3.2 + Math.random() * 5.0 : 3.5 + Math.random() * 7.5,
                     aspect: 0.5 + Math.random() * 0.45,
                     angle: Math.random() * Math.PI,
-                    alpha: isDark ? 0.38 + Math.random() * 0.35 : 0.08 + Math.random() * 0.18,
+                    alpha: isDark ? 0.42 + Math.random() * 0.35 : 0.12 + Math.random() * 0.22,
                     phase: Math.random() * Math.PI * 2,
                     isDark,
                     isBokeh: !isDark
@@ -417,22 +436,15 @@ window.PWONYX = window.PWONYX || {};
             if (this.state !== 'menu') return;
             this.state = 'transitioning';
             this.transitionTimer = 0;
-            this.transitionDuration = 0.95;
+            this.transitionDuration = 0.55;
             this.transitionProgress = 0;
             this.pendingModeId = modeId || this.mode.id;
+            this.screenShake = 0;
 
-            // Audio: Start music and low-pass sweep
+            // Audio: Start music and normal filter cleanly without jarring explosion SFX
             Audio.startMusic();
             Audio.setLowPassEffect('normal');
-
-            // Explosive shockwave from central orb!
-            const cx = this.arenaX + this.arenaWidth / 2;
-            const cy = this.arenaY + this.arenaHeight / 2 - 14;
-            this.particles.shockwave(cx, cy, '#00f5d4', 120);
-            this.particles.shockwave(cx, cy, '#ff007f', 80);
-            this.particles.burst(cx, cy, 36, '#00f5d4', 90, 360, 4);
-            Audio.playScoreGoal();
-            Audio.playGhostLaunch();
+            Audio.playPowerUp();
 
             if (this.callbacks.onTransitionStart) {
                 this.callbacks.onTransitionStart();
@@ -576,6 +588,23 @@ window.PWONYX = window.PWONYX || {};
             this.render(dt);
         }
 
+        advanceFlowParticles(dt, speedMul = 1) {
+            if (!this.flowParticles) return;
+            for (let i = 0; i < this.flowParticles.length; i++) {
+                const p = this.flowParticles[i];
+                const wave = Math.sin(this.menuTime * (p.waveFreq || 1) + p.phase) * (p.waveAmp || 0.006);
+                p.nx += p.vx * dt * speedMul;
+                p.ny += (p.vy * speedMul + wave) * dt;
+                if (p.rotSpeed) {
+                    p.angle = (p.angle || 0) + p.rotSpeed * dt * speedMul;
+                }
+                if (p.nx < -0.14) p.nx = 1.14;
+                if (p.nx > 1.14) p.nx = -0.14;
+                if (p.ny < -0.14) p.ny = 1.14;
+                if (p.ny > 1.14) p.ny = -0.14;
+            }
+        }
+
         updateMenuParallax(dt) {
             this.menuTime += dt;
             if (this.flowClickPulse > 0) {
@@ -607,7 +636,7 @@ window.PWONYX = window.PWONYX || {};
             this.parallax.camX += (this.parallax.targetCamX - this.parallax.camX) * dt * 4.2;
             this.parallax.camY += (this.parallax.targetCamY - this.parallax.camY) * dt * 4.2;
 
-            // Subtle parallax shift on the DOM title/play block
+            // Subtle parallax shift on the DOM title/play block (remains horizontally centered via margin-inline: auto)
             const menuCenter = document.getElementById('flow-menu-center');
             if (menuCenter && this.state === 'menu') {
                 const tx = (-this.parallax.coreX * 0.35).toFixed(2);
@@ -615,19 +644,7 @@ window.PWONYX = window.PWONYX || {};
                 menuCenter.style.transform = `translate3d(${tx}px, ${ty}px, 0)`;
             }
 
-            // Update floating space dust / bokeh across layers
-            if (this.flowParticles) {
-                for (let i = 0; i < this.flowParticles.length; i++) {
-                    const p = this.flowParticles[i];
-                    p.nx += p.vx * dt;
-                    p.ny += p.vy * dt;
-                    if (p.nx < -0.1) p.nx = 1.1;
-                    if (p.nx > 1.1) p.nx = -0.1;
-                    if (p.ny < -0.1) p.ny = 1.1;
-                    if (p.ny > 1.1) p.ny = -0.1;
-                }
-            }
-
+            this.advanceFlowParticles(dt, 1);
             this.updateParticles(dt);
         }
 
@@ -636,11 +653,12 @@ window.PWONYX = window.PWONYX || {};
             this.transitionTimer += dt;
             this.transitionProgress = Math.min(1, this.transitionTimer / this.transitionDuration);
 
-            // Screen shake burst at the start of transition
-            if (this.transitionTimer < 0.25) {
-                this.screenShake = 6 * (1 - this.transitionTimer / 0.25);
-            }
+            // Smoothly return parallax offsets to 0 so the central core converges to exact arena center
+            this.parallax.coreX *= Math.pow(0.05, dt);
+            this.parallax.coreY *= Math.pow(0.05, dt);
+            this.parallax.rot3D *= Math.pow(0.05, dt);
 
+            this.advanceFlowParticles(dt, 1 + this.transitionProgress * 1.6);
             this.updateParticles(dt);
 
             if (this.transitionProgress >= 1) {
@@ -1448,16 +1466,23 @@ window.PWONYX = window.PWONYX || {};
             // =========================================================================
             // 3. CENTRAL ORGANIC CORE + TRANSLUCENT WAVY TRAIL SHELLS (Factor 0.05)
             // =========================================================================
-            // Positioned slightly right of center & upper-mid so the trail flows left
-            // and "P W O N Y X" / "P L A Y" sits cleanly right underneath the sphere.
-            const floatY = Math.sin(time * 1.35) * 6;
-            const floatX = Math.cos(time * 0.95) * 4;
-            const baseCoreX = vw * 0.54 - coreX * 1.15 + floatX;
-            const baseCoreY = vh * 0.455 - coreY * 1.15 + floatY - (isTrans ? easeT * 420 : 0);
+            // Centered horizontally above "P W O N Y X" / "P L A Y"; during transition,
+            // smoothly glides to exact arena center (0.5, 0.5) and condenses into the game ball.
+            const floatY = Math.sin(time * 1.35) * 6 * (1 - easeT);
+            const floatX = Math.cos(time * 0.95) * 4 * (1 - easeT);
+            const menuCoreX = vw * 0.50 - coreX * 1.15 + floatX;
+            const menuCoreY = vh * 0.43 - coreY * 1.15 + floatY;
+            const arenaCenterX = this.arenaX + this.arenaWidth * 0.5;
+            const arenaCenterY = this.arenaY + this.arenaHeight * 0.5;
 
-            // Audio-reactive scale & bloom intensity on low-frequency kick
-            const kickScale = 1 + kickEnergy * 0.075 + (isTrans ? easeT * 0.35 : 0);
-            const coreRadius = minDim * 0.148 * kickScale;
+            const baseCoreX = menuCoreX + (arenaCenterX - menuCoreX) * easeT;
+            const baseCoreY = menuCoreY + (arenaCenterY - menuCoreY) * easeT;
+
+            // Audio-reactive scale & bloom intensity on low-frequency kick; condenses to ball radius (9px) on start
+            const kickScale = 1 + kickEnergy * 0.075 * (1 - easeT);
+            const menuRadius = minDim * 0.145 * kickScale;
+            const coreRadius = isTrans ? menuRadius + (9 - menuRadius) * easeT : menuRadius;
+            const shellFade = Math.max(0, 1 - easeT * 1.5);
 
             // Trail direction vector pointing toward the upper-left (~ -163 deg, matching Creo - Flow)
             const trailAngle = -2.84 + rot3D * 0.28 + Math.sin(time * 0.7) * 0.025;
@@ -1468,7 +1493,7 @@ window.PWONYX = window.PWONYX || {};
 
             // --- 3A. Translucent Wavy Trail Silhouette Shells (Back-to-Front: 7 down to 1) ---
             const numShells = 7;
-            const maxTrailDist = coreRadius * 2.55;
+            const maxTrailDist = coreRadius * 2.55 * (1 - easeT * 0.5);
 
             ctx.save();
             for (let i = numShells; i >= 1; i--) {
@@ -1494,7 +1519,7 @@ window.PWONYX = window.PWONYX || {};
                 this.traceOrganicContour(ctx, 0, 0, rx, ry, shellPhase, rot3D, 0.085 + frac * 0.03);
 
                 // Translucent smoky cyan-petrol fill with brighter rim toward the core
-                const shellAlpha = (0.11 + (1 - frac) * 0.22) * sceneFade;
+                const shellAlpha = (0.11 + (1 - frac) * 0.22) * shellFade;
                 const fillGrad = ctx.createLinearGradient(-rx, -ry * 0.3, rx * 1.1, ry * 0.4);
                 fillGrad.addColorStop(0, `rgba(14, 42, 68, ${shellAlpha * 0.55})`);
                 fillGrad.addColorStop(0.55, `rgba(62, 138, 185, ${shellAlpha * 0.85})`);
@@ -1504,14 +1529,14 @@ window.PWONYX = window.PWONYX || {};
 
                 // Crisp gossamer rim highlight (characteristic translucent layered ridge in Creo - Flow)
                 ctx.lineWidth = 1.2 + (1 - frac) * 1.3;
-                ctx.strokeStyle = `rgba(182, 232, 255, ${(0.16 + (1 - frac) * 0.34 + kickEnergy * 0.08) * sceneFade})`;
+                ctx.strokeStyle = `rgba(182, 232, 255, ${(0.16 + (1 - frac) * 0.34 + kickEnergy * 0.08) * shellFade})`;
                 ctx.shadowColor = '#7fd8ff';
                 ctx.shadowBlur = 10 + (1 - frac) * 12;
                 ctx.stroke();
 
                 // Delicate internal curved membrane ribs (frozen smoke / jellyfish striations)
                 ctx.shadowBlur = 0;
-                ctx.strokeStyle = `rgba(195, 238, 255, ${(0.07 + (1 - frac) * 0.12) * sceneFade})`;
+                ctx.strokeStyle = `rgba(195, 238, 255, ${(0.07 + (1 - frac) * 0.12) * shellFade})`;
                 ctx.lineWidth = 0.85;
                 for (let rib = -1; rib <= 1; rib++) {
                     ctx.beginPath();
@@ -1538,7 +1563,7 @@ window.PWONYX = window.PWONYX || {};
                 baseCoreX, baseCoreY, coreRadius * 0.25,
                 baseCoreX, baseCoreY, bloomRadius
             );
-            const bloomIntensity = Math.min(1, (0.62 + kickEnergy * 0.35) * sceneFade);
+            const bloomIntensity = Math.min(1, 0.62 + kickEnergy * 0.35);
             outerBloom.addColorStop(0, `rgba(235, 250, 255, ${bloomIntensity})`);
             outerBloom.addColorStop(0.28, `rgba(120, 212, 255, ${bloomIntensity * 0.78})`);
             outerBloom.addColorStop(0.58, `rgba(42, 138, 204, ${bloomIntensity * 0.36})`);
@@ -1566,25 +1591,25 @@ window.PWONYX = window.PWONYX || {};
                     coreRadius * foldScale * 0.96,
                     time * 0.8 + fold * 2.1,
                     rot3D,
-                    0.065
+                    0.065 * (1 - easeT)
                 );
                 const foldGrad = ctx.createRadialGradient(
                     coreRadius * 0.15, -coreRadius * 0.1, coreRadius * 0.2,
                     0, 0, coreRadius * foldScale * 1.1
                 );
-                foldGrad.addColorStop(0, `rgba(255, 255, 255, ${0.45 * sceneFade})`);
-                foldGrad.addColorStop(0.65, `rgba(155, 222, 255, ${0.32 * sceneFade})`);
-                foldGrad.addColorStop(1, `rgba(70, 165, 225, ${0.08 * sceneFade})`);
+                foldGrad.addColorStop(0, `rgba(255, 255, 255, ${0.45 * shellFade})`);
+                foldGrad.addColorStop(0.65, `rgba(155, 222, 255, ${0.32 * shellFade})`);
+                foldGrad.addColorStop(1, `rgba(70, 165, 225, ${0.08 * shellFade})`);
                 ctx.fillStyle = foldGrad;
                 ctx.fill();
 
                 ctx.lineWidth = 1.4;
-                ctx.strokeStyle = `rgba(200, 242, 255, ${(0.38 + kickEnergy * 0.15) * sceneFade})`;
+                ctx.strokeStyle = `rgba(200, 242, 255, ${(0.38 + kickEnergy * 0.15) * shellFade})`;
                 ctx.stroke();
                 ctx.restore();
             }
 
-            // --- 3D. White-Hot Emissive Central Core (with subtle warm cream/rose center & cyan edge reflections) ---
+            // --- 3D. White-Hot Emissive Central Core (condenses into the game ball on start) ---
             ctx.save();
             ctx.translate(baseCoreX, baseCoreY);
             ctx.rotate(rot3D * 0.12);
@@ -1597,7 +1622,7 @@ window.PWONYX = window.PWONYX || {};
                 coreRadius * 0.97,
                 time * 0.65,
                 rot3D,
-                0.052
+                0.052 * (1 - easeT)
             );
 
             // Inner gradient matching Creo - Flow's white-hot right dome, subtle warm blush core, and icy-cyan left rim
@@ -1609,14 +1634,14 @@ window.PWONYX = window.PWONYX || {};
                 0,
                 coreRadius * 1.08
             );
-            coreGrad.addColorStop(0, `rgba(255, 255, 255, ${sceneFade})`);
-            coreGrad.addColorStop(0.42, `rgba(255, 250, 247, ${sceneFade})`);
-            coreGrad.addColorStop(0.68, `rgba(244, 232, 232, ${0.98 * sceneFade})`);
-            coreGrad.addColorStop(0.88, `rgba(195, 228, 250, ${0.95 * sceneFade})`);
-            coreGrad.addColorStop(1, `rgba(130, 210, 255, ${0.9 * sceneFade})`);
+            coreGrad.addColorStop(0, 'rgba(255, 255, 255, 1)');
+            coreGrad.addColorStop(0.42, 'rgba(255, 250, 247, 1)');
+            coreGrad.addColorStop(0.68, 'rgba(244, 232, 232, 0.98)');
+            coreGrad.addColorStop(0.88, 'rgba(195, 228, 250, 0.96)');
+            coreGrad.addColorStop(1, 'rgba(0, 245, 212, 0.92)');
 
             ctx.shadowColor = '#9be4ff';
-            ctx.shadowBlur = (34 + kickEnergy * 32) * sceneFade;
+            ctx.shadowBlur = 34 + kickEnergy * 32;
             ctx.fillStyle = coreGrad;
             ctx.fill();
 
