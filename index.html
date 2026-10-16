@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PWONYX</title>
+    <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+    <!-- The whole page is the arena (4:3, scaled to fill the screen) -->
+    <div class="stage" id="stage">
+        <canvas id="arena-canvas"></canvas>
+
+        <!-- Minimal in-game HUD -->
+        <div class="hud" id="hud">
+            <div class="hud-progress"><div class="hud-progress-fill" id="hud-progress-fill"></div></div>
+            <div class="hud-score" id="hud-score">0</div>
+            <div class="hud-right">
+                <span id="hud-balls">1</span><span class="hud-dim"> bolas</span>
+                <button class="hud-icon" id="btn-pause" title="Pausar (P)">❚❚</button>
+            </div>
+            <div class="hud-buffs" id="hud-active-buffs"></div>
+            <div class="hud-fps hidden" id="hud-telemetry"></div>
+        </div>
+
+        <!-- Menu -->
+        <div class="overlay" id="overlay-menu">
+            <h1 class="logo">PWONYX</h1>
+            <div class="mode-list" id="mode-selector-grid"></div>
+            <p class="mode-desc" id="mode-desc"></p>
+            <button class="btn-play" id="btn-start-match">JOGAR</button>
+            <nav class="menu-links">
+                <button class="link open-shop-btn">Upgrades</button>
+                <span>·</span>
+                <button class="link open-ach-btn">Conquistas <span id="ach-count-badge">0/12</span></button>
+                <span>·</span>
+                <button class="link open-suno-btn">Música</button>
+                <span>·</span>
+                <span class="credits"><span class="credits-value">0</span> CR</span>
+            </nav>
+            <p class="hint">Mouse move · Clique lança a raquete fantasma · P pausa · F tela cheia · M som</p>
+        </div>
+
+        <!-- Pause -->
+        <div class="overlay hidden" id="overlay-pause">
+            <h2 class="title">PAUSA</h2>
+            <button class="btn-play" id="btn-resume">CONTINUAR</button>
+            <nav class="menu-links">
+                <button class="link open-suno-btn">Música</button>
+                <span>·</span>
+                <button class="link" id="btn-pause-quit">Sair para o menu</button>
+            </nav>
+        </div>
+
+        <!-- Game Over -->
+        <div class="overlay hidden" id="overlay-gameover">
+            <h2 class="title" id="go-title">FIM DE JOGO</h2>
+            <div class="results">
+                <div><span>Pontos</span><strong id="go-score">0</strong></div>
+                <div><span>Créditos</span><strong id="go-credits">+0</strong></div>
+                <div><span>Domínio</span><strong id="go-domination">100%</strong></div>
+                <div><span>Distância</span><strong id="go-distance">0 px</strong></div>
+            </div>
+            <button class="btn-play" id="btn-play-again">JOGAR DE NOVO</button>
+            <nav class="menu-links">
+                <button class="link open-shop-btn">Upgrades</button>
+                <span>·</span>
+                <button class="link" id="btn-back-menu">Menu</button>
+            </nav>
+        </div>
+    </div>
+
+    <!-- Upgrades -->
+    <div class="modal hidden" id="modal-shop">
+        <div class="modal-box">
+            <header>
+                <h2>Upgrades</h2>
+                <span class="credits"><span class="credits-value">0</span> CR</span>
+                <button class="btn-close-modal">✕</button>
+            </header>
+            <div class="shop-list" id="shop-items-grid"></div>
+            <footer>
+                <button class="link" id="btn-sandbox-credits">+1000 CR (teste)</button>
+                <button class="link" id="btn-reset-upgrades">Resetar upgrades</button>
+            </footer>
+        </div>
+    </div>
+
+    <!-- Achievements -->
+    <div class="modal hidden" id="modal-achievements">
+        <div class="modal-box">
+            <header>
+                <h2>Conquistas</h2>
+                <button class="btn-close-modal">✕</button>
+            </header>
+            <div class="ach-list" id="achievements-grid"></div>
+        </div>
+    </div>
+
+    <!-- Music & visual settings (Suno stems live here) -->
+    <div class="modal hidden" id="modal-suno">
+        <div class="modal-box">
+            <header>
+                <h2>Música &amp; Visual</h2>
+                <button class="btn-close-modal">✕</button>
+            </header>
+
+            <div class="setting-row">
+                <label for="select-audio-track">Trilha</label>
+                <select id="select-audio-track">
+                    <option value="flow">Flow (Estilo Creo - Groove &amp; Metais)</option>
+                    <option value="popcorn">Popcorn (PWONYX 2009 Synth Remix)</option>
+                    <option value="cyber">Cyber Overdrive (ParagonX9 Style)</option>
+                    <option value="suno">Meus stems do Suno</option>
+                </select>
+            </div>
+
+            <div class="setting-row">
+                <label for="select-tunnel">Efeito túnel de fundo</label>
+                <select id="select-tunnel">
+                    <option value="subtle">Suave</option>
+                    <option value="high">Forte</option>
+                    <option value="off">Desligado</option>
+                </select>
+            </div>
+
+            <div class="setting-row">
+                <label for="range-trail">Rastro das bolas</label>
+                <input type="range" id="range-trail" min="0.03" max="0.2" step="0.005" value="0.075" />
+            </div>
+
+            <h3>Stems</h3>
+            <label class="check">
+                <input type="checkbox" id="toggle-auto-stems" checked />
+                Subir as camadas automaticamente conforme o nº de bolas
+            </label>
+
+            <div class="stem-list">
+                <div class="stem">
+                    <span class="stem-name">Drums</span>
+                    <input type="range" min="0" max="1" step="0.01" value="1" id="slider-stem-drums" />
+                    <label class="file-btn">Carregar<input type="file" id="file-stem-drums" accept="audio/*" hidden /></label>
+                    <span class="stem-status" id="status-stem-drums">synth</span>
+                </div>
+                <div class="stem">
+                    <span class="stem-name">Bass</span>
+                    <input type="range" min="0" max="1" step="0.01" value="0.35" id="slider-stem-bass" />
+                    <label class="file-btn">Carregar<input type="file" id="file-stem-bass" accept="audio/*" hidden /></label>
+                    <span class="stem-status" id="status-stem-bass">synth</span>
+                </div>
+                <div class="stem">
+                    <span class="stem-name">Synth</span>
+                    <input type="range" min="0" max="1" step="0.01" value="0" id="slider-stem-arp" />
+                    <label class="file-btn">Carregar<input type="file" id="file-stem-arp" accept="audio/*" hidden /></label>
+                    <span class="stem-status" id="status-stem-arp">synth</span>
+                </div>
+                <div class="stem">
+                    <span class="stem-name">Lead</span>
+                    <input type="range" min="0" max="1" step="0.01" value="0" id="slider-stem-lead" />
+                    <label class="file-btn">Carregar<input type="file" id="file-stem-lead" accept="audio/*" hidden /></label>
+                    <span class="stem-status" id="status-stem-lead">synth</span>
+                </div>
+            </div>
+            <p class="note">Dica: converta os stems do Suno para .ogg/.mp3 (~160 kbps, loop de 30–60 s) — fica com menos de 1 MB cada.</p>
+        </div>
+    </div>
+
+    <div id="toast-container"></div>
+
+    <script src="js/config.js"></script>
+    <script src="js/pools.js"></script>
+    <script src="js/audio.js"></script>
+    <script src="js/game.js"></script>
+    <script src="js/main.js"></script>
+</body>
+</html>
