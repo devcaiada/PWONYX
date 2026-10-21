@@ -94,13 +94,22 @@ window.PWONYX = window.PWONYX || {};
             this.isPlaying = false;
             this.isMuted = false;
             this.autoLayering = true; // Automatically control stem levels by ball count
-            this.currentTrack = 'popcorn'; // 'popcorn' | 'cyber' | 'suno'
+            this.currentTrack = 'chaoz'; // 'chaoz' | 'flow' | 'popcorn' | 'cyber' | 'suno'
 
             // Master chain nodes
             this.masterGain = null;
             this.filterNode = null;
             this.analyser = null;
             this.sfxGain = null;
+            this.trackGain = null;
+
+            // Built-in MP3 Track ("assets/musics/Chaoz Fantasy.mp3")
+            this.chaozUrl = 'assets/musics/Chaoz Fantasy.mp3';
+            this.chaozBuffer = null;
+            this.chaozSource = null;
+            this.chaozMediaEl = null;
+            this.chaozLoading = false;
+            this.chaozStartTime = 0;
 
             // 4 Stem GainNodes + Analysers for visual meters
             this.stemGains = {};
@@ -118,12 +127,17 @@ window.PWONYX = window.PWONYX || {};
             this.schedulerTimer = null;
             this.noiseBuffer = null;
 
-            // FFT Data
+            // FFT & Real-time Beat/Intensity Data
             this.freqData = new Uint8Array(128);
             this.bassEnergy = 0;
+            this.prevBassEnergy = 0;
             this.midEnergy = 0;
             this.highEnergy = 0;
             this.beatPulse = 0;
+            this.beatCooldown = 0;
+            this.beatCount = 0;
+            this.musicElapsed = 0;
+            this.musicIntensity = 0.25;
         }
 
         init() {
@@ -146,12 +160,17 @@ window.PWONYX = window.PWONYX || {};
             // Master Analyser (AnalyserNode for audio-reactive visuals)
             this.analyser = this.ctx.createAnalyser();
             this.analyser.fftSize = 256;
-            this.analyser.smoothingTimeConstant = 0.78;
+            this.analyser.smoothingTimeConstant = 0.75;
             this.freqData = new Uint8Array(this.analyser.frequencyBinCount);
 
             // Master Gain
             this.masterGain = this.ctx.createGain();
             this.masterGain.gain.value = 0.8;
+
+            // Dedicated gain node for full MP3 track (Chaoz Fantasy)
+            this.trackGain = this.ctx.createGain();
+            this.trackGain.gain.value = 0.92;
+            this.trackGain.connect(this.filterNode);
 
             // SFX Gain (separate from music filter or post-filter so hits always punch)
             this.sfxGain = this.ctx.createGain();
@@ -181,6 +200,80 @@ window.PWONYX = window.PWONYX || {};
             this.isInitialized = true;
         }
 
+        async startChaozTrack() {
+            if (!this.ctx) return;
+
+            // 1. If already decoded into Web Audio buffer, play directly via BufferSource
+            if (this.chaozBuffer) {
+                this.stopChaozTrack();
+                const src = this.ctx.createBufferSource();
+                src.buffer = this.chaozBuffer;
+                src.loop = true;
+                src.connect(this.trackGain);
+                src.start(0);
+                this.chaozSource = src;
+                this.chaozStartTime = this.ctx.currentTime;
+                return;
+            }
+
+            // 2. Try fetching & decoding into Web Audio API AudioBuffer (works on http/https)
+            if (!this.chaozLoading && window.location && window.location.protocol !== 'file:') {
+                this.chaozLoading = true;
+                try {
+                    const res = await fetch(encodeURI(this.chaozUrl));
+                    if (res.ok) {
+                        const arr = await res.arrayBuffer();
+                        this.chaozBuffer = await this.ctx.decodeAudioData(arr);
+                        this.chaozLoading = false;
+                        if (this.isPlaying && this.currentTrack === 'chaoz') {
+                            this.startChaozTrack();
+                        }
+                        return;
+                    }
+                } catch (e) {
+                    // Fallback to HTMLAudioElement below
+                }
+                this.chaozLoading = false;
+            }
+
+            // 3. Fallback for local file:// protocol: use HTMLAudioElement
+            if (!this.chaozMediaEl && typeof window.Audio !== 'undefined') {
+                this.chaozMediaEl = new window.Audio(this.chaozUrl);
+                this.chaozMediaEl.loop = true;
+                this.chaozMediaEl.volume = this.isMuted ? 0 : 0.78;
+                try {
+                    if (window.location && window.location.protocol !== 'file:') {
+                        const mediaSrc = this.ctx.createMediaElementSource(this.chaozMediaEl);
+                        mediaSrc.connect(this.trackGain);
+                    }
+                } catch (e) {
+                    // Direct element playback if MediaElementSource is restricted
+                }
+            }
+
+            if (this.chaozMediaEl) {
+                this.chaozMediaEl.currentTime = 0;
+                this.chaozMediaEl.volume = this.isMuted ? 0 : 0.78;
+                this.chaozMediaEl.play().catch(() => {});
+                this.chaozStartTime = this.ctx.currentTime;
+            }
+        }
+
+        stopChaozTrack() {
+            if (this.chaozSource) {
+                try {
+                    this.chaozSource.stop();
+                    this.chaozSource.disconnect();
+                } catch (e) {}
+                this.chaozSource = null;
+            }
+            if (this.chaozMediaEl) {
+                try {
+                    this.chaozMediaEl.pause();
+                } catch (e) {}
+            }
+        }
+
         startMusic() {
             this.init();
             if (this.ctx.state === 'suspended') {
@@ -188,8 +281,12 @@ window.PWONYX = window.PWONYX || {};
             }
             this.stopMusic();
             this.isPlaying = true;
+            this.musicElapsed = 0;
+            this.beatCount = 0;
 
-            if (this.currentTrack === 'suno' && this.hasAnyCustomStems()) {
+            if (this.currentTrack === 'chaoz') {
+                this.startChaozTrack();
+            } else if (this.currentTrack === 'suno' && this.hasAnyCustomStems()) {
                 this.startCustomStemsSampleAccurate();
             } else {
                 this.stepIndex = 0;
@@ -205,6 +302,7 @@ window.PWONYX = window.PWONYX || {};
                 this.schedulerTimer = null;
             }
             this.stopCustomStemSources();
+            this.stopChaozTrack();
         }
 
         setTrack(trackId) {
@@ -341,9 +439,11 @@ window.PWONYX = window.PWONYX || {};
             if (mode === 'paused') {
                 freq.exponentialRampToValueAtTime(380, now + 0.18);
                 q.linearRampToValueAtTime(4.0, now + 0.18);
+                if (this.chaozMediaEl && !this.isMuted) this.chaozMediaEl.volume = 0.25;
             } else if (mode === 'slowmo') {
                 freq.exponentialRampToValueAtTime(680, now + 0.15);
                 q.linearRampToValueAtTime(3.2, now + 0.15);
+                if (this.chaozMediaEl && !this.isMuted) this.chaozMediaEl.volume = 0.45;
             } else if (mode === 'damage') {
                 // Quick muffled dip then recover
                 freq.exponentialRampToValueAtTime(450, now + 0.04);
@@ -352,6 +452,7 @@ window.PWONYX = window.PWONYX || {};
                 // 'normal'
                 freq.exponentialRampToValueAtTime(20000, now + 0.2);
                 q.linearRampToValueAtTime(1.2, now + 0.2);
+                if (this.chaozMediaEl && !this.isMuted) this.chaozMediaEl.volume = 0.78;
             }
         }
 
@@ -360,6 +461,9 @@ window.PWONYX = window.PWONYX || {};
             this.isMuted = !this.isMuted;
             const now = this.ctx.currentTime;
             this.masterGain.gain.setValueAtTime(this.isMuted ? 0 : 0.8, now);
+            if (this.chaozMediaEl) {
+                this.chaozMediaEl.volume = this.isMuted ? 0 : 0.78;
+            }
             return this.isMuted;
         }
 
@@ -656,8 +760,13 @@ window.PWONYX = window.PWONYX || {};
          */
         updateAnalysis(dt) {
             this.beatPulse = Math.max(0, this.beatPulse - dt * 4.5);
+            this.beatCooldown = Math.max(0, this.beatCooldown - dt);
+            if (this.isPlaying) {
+                this.musicElapsed += dt;
+            }
             if (!this.isInitialized || !this.analyser) return;
 
+            this.prevBassEnergy = this.bassEnergy;
             this.analyser.getByteFrequencyData(this.freqData);
 
             let bassSum = 0;
@@ -671,6 +780,45 @@ window.PWONYX = window.PWONYX || {};
             let highSum = 0;
             for (let i = 32; i < 72; i++) highSum += this.freqData[i];
             this.highEnergy = highSum / (40 * 255);
+
+            // If playing Chaoz Fantasy via file:// HTMLAudioElement where AnalyserNode may be silent,
+            // synthesize accurate 142 BPM beat & phrase energy synced to the track time
+            if (
+                this.isPlaying &&
+                this.currentTrack === 'chaoz' &&
+                this.bassEnergy < 0.005 &&
+                this.midEnergy < 0.005
+            ) {
+                const t = this.chaozMediaEl ? this.chaozMediaEl.currentTime : this.musicElapsed;
+                const beatPeriod = 60 / 142; // ~0.4225s per beat (142 BPM)
+                const beatPhase = (t % beatPeriod) / beatPeriod;
+                const kickEnv = Math.pow(Math.max(0, 1 - beatPhase * 2.6), 2);
+                const build = Math.min(1, 0.35 + (t / 55) * 0.65);
+
+                this.bassEnergy = (0.28 + kickEnv * 0.62) * build;
+                this.midEnergy = (0.24 + Math.abs(Math.sin(t * 7.4)) * 0.45) * build;
+                this.highEnergy = (0.18 + Math.abs(Math.cos(t * 14.8)) * 0.38) * build;
+
+                if (beatPhase < 0.12 && this.beatCooldown <= 0) {
+                    this.beatPulse = 1.0;
+                    this.beatCooldown = beatPeriod * 0.7;
+                    this.beatCount++;
+                }
+            } else if (this.isPlaying) {
+                // Real-time FFT onset/kick detection on decoded audio buffer
+                const bassJump = this.bassEnergy - this.prevBassEnergy;
+                if (this.bassEnergy > 0.42 && bassJump > 0.065 && this.beatCooldown <= 0) {
+                    this.beatPulse = 1.0;
+                    this.beatCooldown = 0.24;
+                    this.beatCount++;
+                }
+            }
+
+            // Smooth overall musical intensity (0.2 -> 1.0) used to drive Pwong 2 ball escalation
+            const instantEnergy = this.bassEnergy * 0.5 + this.midEnergy * 0.35 + this.highEnergy * 0.15;
+            const timeRamp = Math.min(1, this.musicElapsed / 60);
+            const targetIntensity = Math.min(1, Math.max(0.22, instantEnergy * 0.85 + timeRamp * 0.45));
+            this.musicIntensity += (targetIntensity - this.musicIntensity) * Math.min(1, dt * 3.0);
         }
     }
 

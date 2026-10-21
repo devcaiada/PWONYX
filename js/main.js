@@ -237,6 +237,10 @@ window.PWONYX = window.PWONYX || {};
         if (game && game.state !== 'menu') {
             $('hud-score').textContent = game.score.toLocaleString('pt-BR');
             $('hud-balls').textContent = game.balls.countActive();
+            const ammoEl = $('hud-ammo');
+            if (ammoEl && game.player) {
+                ammoEl.textContent = game.player.ghostAmmo;
+            }
 
             const fill = $('hud-progress-fill');
             if (game.mode.isSurvival) {

@@ -471,8 +471,8 @@ window.PWONYX = window.PWONYX || {};
             this.progress = 0;
             this.targetBallCount = 1;
             this.ballSpawnTimer = 0;
-            this.powerupSpawnTimer = 4.5;
-            this.ammoSpawnTimer = 3.2;
+            this.powerupSpawnTimer = 28.0;
+            this.ammoSpawnTimer = 1.4; // First wave of ammo items drops right at the beginning!
             this.screenShake = 0;
 
             this.buffs.wide = 0;
@@ -480,19 +480,21 @@ window.PWONYX = window.PWONYX || {};
             this.buffs.sticky = 0;
             this.buffs.overdrive = 0;
 
-            const startAmmo = 3 + Math.floor((this.upgrades.powerupDuration || 0) / 2);
+            const mastUpgrade = this.upgrades.powerupDuration || 0;
+            const baseMaxAmmo = typeof this.mode.maxAmmo === 'number' ? this.mode.maxAmmo : 99;
             const cx = this.arenaX + this.arenaWidth / 2;
             this.player.x = cx;
             this.player.prevX = cx;
             this.player.y = this.arenaY + this.arenaHeight - CFG.PADDLE_Y_OFFSET;
             this.player.distanceTraveled = 0;
-            this.player.ghostAmmo = startAmmo;
-            this.player.maxGhostAmmo = 8 + Math.floor((this.upgrades.powerupDuration || 0) / 2);
+            // Always start at 0 ammo — ammo is only earned by collecting falling ammo items!
+            this.player.ghostAmmo = 0;
+            this.player.maxGhostAmmo = baseMaxAmmo + mastUpgrade * 10;
 
             this.opponent.x = cx;
             this.opponent.prevX = cx;
             this.opponent.y = this.arenaY + CFG.PADDLE_Y_OFFSET;
-            this.opponent.ghostAmmo = 3;
+            this.opponent.ghostAmmo = 0;
 
             this.recalculatePaddleStats();
 
@@ -501,10 +503,10 @@ window.PWONYX = window.PWONYX || {};
             this.fbCtx.fillRect(0, 0, this.fbCanvas.width, this.fbCanvas.height);
             this.clearTrails();
 
-            // Spawn first ball
-            this.spawnBallInCenter(true);
+            // Spawn first ball from the bottom launching upward (Pwong 2 style)
+            this.spawnBallFromBottom();
 
-            // Start adaptive 4-stem music
+            // Start adaptive music (defaults to Chaoz Fantasy)
             Audio.startMusic();
             Audio.setLowPassEffect('normal');
             Audio.updateAdaptiveLayers(1);
@@ -527,21 +529,39 @@ window.PWONYX = window.PWONYX || {};
             }
         }
 
-        spawnBallInCenter(towardsPlayer = false) {
-            const speed = this.mode.baseBallSpeed * CFG.SPEED_SCALE;
-            const angleOffset = (Math.random() - 0.5) * 0.75; // radians from vertical
-            const dirY = towardsPlayer ? 1 : (Math.random() < 0.5 ? 1 : -1);
+        /**
+         * Pwong 2-style bottom ball launch: balls emerge from the bottom (player's side)
+         * and shoot upward into the arena, scaling speed with the music intensity.
+         */
+        spawnBallFromBottom() {
+            const musicBoost = 1 + (Audio.musicIntensity || 0.25) * 0.16;
+            const speed = Math.min(
+                this.mode.maxBallSpeed * CFG.SPEED_SCALE,
+                this.mode.baseBallSpeed * CFG.SPEED_SCALE * musicBoost
+            );
+            const angleOffset = (Math.random() - 0.5) * 0.68; // radians from vertical
             const vx = Math.sin(angleOffset) * speed;
-            const vy = Math.cos(angleOffset) * speed * dirY;
+            const vy = -Math.abs(Math.cos(angleOffset) * speed); // always launch upward from bottom!
             const color = NEON_BALL_COLORS[this.balls.countActive() % NEON_BALL_COLORS.length];
 
-            const cx = this.arenaX + this.arenaWidth / 2;
-            const cy = this.arenaY + this.arenaHeight / 2;
-            const b = this.balls.spawn(cx, cy, vx, vy, color);
+            const baseX = this.player && this.player.x
+                ? this.player.x + (Math.random() - 0.5) * Math.min(90, this.player.width * 0.6)
+                : this.arenaX + this.arenaWidth / 2;
+            const spawnX = Math.max(
+                this.arenaX + 36,
+                Math.min(this.arenaX + this.arenaWidth - 36, baseX)
+            );
+            const spawnY = this.arenaY + this.arenaHeight - CFG.PADDLE_Y_OFFSET - this.player.height / 2 - CFG.BALL_RADIUS - 4;
+
+            const b = this.balls.spawn(spawnX, spawnY, vx, vy, color);
             if (b) {
-                this.particles.shockwave(cx, cy, color, 50);
-                this.particles.burst(cx, cy, 14, color, 60, 220, 3);
+                this.particles.shockwave(spawnX, spawnY, color, 48);
+                this.particles.burst(spawnX, spawnY, 14, color, 60, 220, 3);
             }
+        }
+
+        spawnBallInCenter() {
+            this.spawnBallFromBottom();
         }
 
         fireGhostPaddle(owner) {
@@ -697,9 +717,21 @@ window.PWONYX = window.PWONYX || {};
                 Audio.setLowPassEffect('normal');
             }
 
-            // Escalate target ball count up to mode.maxBalls (up to 20 balls!)
-            this.ballSpawnTimer += dt;
-            if (this.ballSpawnTimer >= this.mode.spawnInterval && this.targetBallCount < this.mode.maxBalls) {
+            // Escalate target ball count in sync with the music intensity & beat pulses (up to 20 balls!)
+            const musicIntensity = Audio.musicIntensity || 0.35;
+            const beatPulse = Audio.beatPulse || 0;
+            const effectiveSpawnInterval = Math.max(
+                1.4,
+                this.mode.spawnInterval * (1.16 - musicIntensity * 0.45)
+            );
+            this.ballSpawnTimer += dt * (0.85 + musicIntensity * 0.45);
+
+            // Trigger new ball on the beat once timer reaches interval (or immediately after short grace window)
+            if (
+                this.targetBallCount < this.mode.maxBalls &&
+                this.ballSpawnTimer >= effectiveSpawnInterval &&
+                (beatPulse > 0.35 || this.ballSpawnTimer >= effectiveSpawnInterval + 0.38)
+            ) {
                 this.ballSpawnTimer = 0;
                 this.targetBallCount++;
                 this.texts.spawn(
@@ -712,10 +744,10 @@ window.PWONYX = window.PWONYX || {};
                 );
             }
 
-            // Ensure active balls match targetBallCount
+            // Ensure active balls match targetBallCount (always spawning upward from the bottom!)
             const activeBallCount = this.balls.countActive();
             if (activeBallCount < this.targetBallCount) {
-                this.spawnBallInCenter();
+                this.spawnBallFromBottom();
             }
 
             // Update 4-Stem Audio Engine with current active ball count
@@ -766,31 +798,62 @@ window.PWONYX = window.PWONYX || {};
             this.opponent.vx = (this.opponent.x - this.opponent.prevX) / Math.max(dt, 0.001);
 
             // --- Spawn Power-Ups & Ghost Ammo Orbs ---
+            // You always start at 0 ammo and earn +10 per item picked up.
+            // More ammo items fall at the beginning (up to 3 at once), decreasing as stage/phase difficulty increases.
             const mastLevel = this.upgrades.powerupDuration || 0;
             const freqMult = 1 - mastLevel * 0.06;
+            const baseAmmoInterval = this.mode.ammoSpawnInterval || 4.8;
+            const progressRatio = this.mode.isSurvival
+                ? Math.min(1, this.elapsedTime / 75)
+                : Math.min(1, this.progress / 100);
 
             this.ammoSpawnTimer -= dt;
             if (this.ammoSpawnTimer <= 0) {
-                this.ammoSpawnTimer = (6.5 + Math.random() * 4.0) * freqMult;
-                this.powerups.spawn(
-                    this.arenaX + 60 + Math.random() * (this.arenaWidth - 120),
-                    this.arenaY + 90,
-                    115 + Math.random() * 45,
-                    'ammo'
-                );
+                const baseDropCount = typeof this.mode.ammoDropCount === 'number' ? this.mode.ammoDropCount : 3;
+                // Drop up to baseDropCount (3 in Easy/Medium/Survival start) early on, tapering down to 1 as phase progresses
+                const dropReduction = Math.floor(progressRatio * baseDropCount);
+                const dropCount = Math.max(1, baseDropCount - dropReduction);
+
+                // Interval also lengthens slightly as the phase gets harder
+                this.ammoSpawnTimer = (baseAmmoInterval * 1.6 * (1 + progressRatio * 0.45) + Math.random() * 3.0) * freqMult;
+
+                const usableWidth = this.arenaWidth - 140;
+                const laneWidth = usableWidth / dropCount;
+                for (let d = 0; d < dropCount; d++) {
+                    const spawnX = this.arenaX + 70 + d * laneWidth + Math.random() * Math.max(20, laneWidth - 20);
+                    const spawnY = this.arenaY + 75 + d * 28;
+                    this.powerups.spawn(
+                        spawnX,
+                        spawnY,
+                        115 + Math.random() * 45,
+                        'ammo'
+                    );
+                }
             }
 
+            // Special power-ups (wide / slow / magnet / 2x) are rare and sporadic:
+            // one at a time, never while a buff is still active or another power-up is falling.
             this.powerupSpawnTimer -= dt;
             if (this.powerupSpawnTimer <= 0) {
-                this.powerupSpawnTimer = (11.0 + Math.random() * 5.0) * freqMult;
-                const types = ['wide', 'slow', 'sticky', 'overdrive'];
-                const pick = types[Math.floor(Math.random() * types.length)];
-                this.powerups.spawn(
-                    this.arenaX + 60 + Math.random() * (this.arenaWidth - 120),
-                    this.arenaY + 80,
-                    105 + Math.random() * 40,
-                    pick
-                );
+                const buffActive = this.buffs.wide > 0 || this.buffs.slow > 0 || this.buffs.sticky > 0 || this.buffs.overdrive > 0;
+                let specialFalling = false;
+                for (let i = 0; i < this.powerups.size; i++) {
+                    const q = this.powerups.items[i];
+                    if (q.active && q.type !== 'ammo') { specialFalling = true; break; }
+                }
+                if (buffActive || specialFalling) {
+                    this.powerupSpawnTimer = 6.0; // re-check shortly
+                } else {
+                    this.powerupSpawnTimer = (38.0 + Math.random() * 22.0) * freqMult;
+                    const types = ['wide', 'slow', 'sticky', 'overdrive'];
+                    const pick = types[Math.floor(Math.random() * types.length)];
+                    this.powerups.spawn(
+                        this.arenaX + 60 + Math.random() * (this.arenaWidth - 120),
+                        this.arenaY + 80,
+                        105 + Math.random() * 40,
+                        pick
+                    );
+                }
             }
 
             // --- Update Ghost Paddles ---
@@ -1050,6 +1113,13 @@ window.PWONYX = window.PWONYX || {};
             }
         }
 
+        /**
+         * Returns the amount of Ghost Ammo granted per pickup (+10 per item collected).
+         */
+        getCurrentAmmoPickupAmount() {
+            return typeof this.mode.ammoPerPickup === 'number' ? this.mode.ammoPerPickup : 10;
+        }
+
         collectPowerUp(p) {
             const mastLevel = this.upgrades.powerupDuration || 0;
             const durMult = 1 + mastLevel * 0.15;
@@ -1057,21 +1127,25 @@ window.PWONYX = window.PWONYX || {};
 
             this.particles.shockwave(p.x, p.y, def.color, 60);
             this.particles.burst(p.x, p.y, 20, def.color, 70, 240, 3.5);
-            this.texts.spawn(p.x, p.y - 16, def.label, def.color, 16, 1.0);
             Audio.playPowerUp();
 
             if (p.type === 'ammo') {
-                this.player.ghostAmmo = Math.min(this.player.maxGhostAmmo, this.player.ghostAmmo + 2);
-            } else if (p.type === 'wide') {
-                this.buffs.wide = def.baseDuration * durMult;
-                this.recalculatePaddleStats();
-            } else if (p.type === 'slow') {
-                this.buffs.slow = def.baseDuration * durMult;
-                Audio.setLowPassEffect('slowmo');
-            } else if (p.type === 'sticky') {
-                this.buffs.sticky = def.baseDuration * durMult;
-            } else if (p.type === 'overdrive') {
-                this.buffs.overdrive = def.baseDuration * durMult;
+                const gain = this.getCurrentAmmoPickupAmount();
+                this.player.ghostAmmo = Math.min(this.player.maxGhostAmmo, this.player.ghostAmmo + gain);
+                this.texts.spawn(p.x, p.y - 16, `+${gain} GHOST AMMO!`, def.color, 16, 1.0);
+            } else {
+                this.texts.spawn(p.x, p.y - 16, def.label, def.color, 16, 1.0);
+                if (p.type === 'wide') {
+                    this.buffs.wide = def.baseDuration * durMult;
+                    this.recalculatePaddleStats();
+                } else if (p.type === 'slow') {
+                    this.buffs.slow = def.baseDuration * durMult;
+                    Audio.setLowPassEffect('slowmo');
+                } else if (p.type === 'sticky') {
+                    this.buffs.sticky = def.baseDuration * durMult;
+                } else if (p.type === 'overdrive') {
+                    this.buffs.overdrive = def.baseDuration * durMult;
+                }
             }
 
             if (p.type !== 'ammo' && this.callbacks.onPowerUpCollected) {
@@ -1467,16 +1541,16 @@ window.PWONYX = window.PWONYX || {};
             // 3. CENTRAL ORGANIC CORE + TRANSLUCENT WAVY TRAIL SHELLS (Factor 0.05)
             // =========================================================================
             // Centered horizontally above "P W O N Y X" / "P L A Y"; during transition,
-            // smoothly glides to exact arena center (0.5, 0.5) and condenses into the game ball.
+            // smoothly glides down to the bottom paddle launch zone and condenses into the first ball.
             const floatY = Math.sin(time * 1.35) * 6 * (1 - easeT);
             const floatX = Math.cos(time * 0.95) * 4 * (1 - easeT);
             const menuCoreX = vw * 0.50 - coreX * 1.15 + floatX;
             const menuCoreY = vh * 0.43 - coreY * 1.15 + floatY;
-            const arenaCenterX = this.arenaX + this.arenaWidth * 0.5;
-            const arenaCenterY = this.arenaY + this.arenaHeight * 0.5;
+            const launchX = this.arenaX + this.arenaWidth * 0.5;
+            const launchY = this.arenaY + this.arenaHeight - CFG.PADDLE_Y_OFFSET - 18;
 
-            const baseCoreX = menuCoreX + (arenaCenterX - menuCoreX) * easeT;
-            const baseCoreY = menuCoreY + (arenaCenterY - menuCoreY) * easeT;
+            const baseCoreX = menuCoreX + (launchX - menuCoreX) * easeT;
+            const baseCoreY = menuCoreY + (launchY - menuCoreY) * easeT;
 
             // Audio-reactive scale & bloom intensity on low-frequency kick; condenses to ball radius (9px) on start
             const kickScale = 1 + kickEnergy * 0.075 * (1 - easeT);
@@ -1839,17 +1913,25 @@ window.PWONYX = window.PWONYX || {};
             ctx.roundRect(x + 6, y + 3, pad.width - 12, pad.height - 6, 4);
             ctx.fill();
 
-            // Draw Ghost Paddle Ammo pips under Player 1 paddle
-            if (isPlayer) {
+            // Draw Ghost Paddle Ammo pips + numeric counter under Player 1 paddle
+            if (isPlayer && pad.ghostAmmo > 0) {
                 const ammo = pad.ghostAmmo;
-                const pipSpacing = 10;
-                const startX = pad.x - ((ammo - 1) * pipSpacing) / 2;
+                const visiblePips = Math.min(10, ammo);
+                const pipSpacing = 9;
+                const startX = pad.x - ((visiblePips - 1) * pipSpacing) / 2;
+                ctx.shadowColor = '#00f5d4';
                 ctx.shadowBlur = 6;
                 ctx.fillStyle = '#00f5d4';
-                for (let i = 0; i < ammo; i++) {
+                for (let i = 0; i < visiblePips; i++) {
                     ctx.beginPath();
-                    ctx.arc(startX + i * pipSpacing, pad.y + 15, 3, 0, Math.PI * 2);
+                    ctx.arc(startX + i * pipSpacing, pad.y + 15, 2.8, 0, Math.PI * 2);
                     ctx.fill();
+                }
+                if (ammo > 10) {
+                    ctx.font = "700 10px 'Orbitron', system-ui, sans-serif";
+                    ctx.textAlign = 'left';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(`×${ammo}`, startX + visiblePips * pipSpacing + 4, pad.y + 15);
                 }
             }
 
