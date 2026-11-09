@@ -588,3 +588,31 @@ input[type="range"] { accent-color: var(--cyan); }
 }
 .toast strong { color: var(--yellow); }
 .toast.hide { opacity: 0; transform: translateY(-10px); }
+
+
+/* ---------- PWONYX Sci-Fi Icons ---------- */
+.pwonyx-icon {
+    display: inline-block;
+    vertical-align: middle;
+    object-fit: contain;
+    mix-blend-mode: screen;
+    filter: drop-shadow(0 0 8px rgba(0, 200, 255, 0.6));
+    transition: transform 0.22s cubic-bezier(0.2, 0.9, 0.3, 1), filter 0.22s ease;
+    user-select: none;
+    pointer-events: none;
+}
+
+button:hover .pwonyx-icon,
+.link:hover .pwonyx-icon,
+.flow-gear-btn:hover .pwonyx-icon,
+.hud-icon:hover .pwonyx-icon {
+    transform: scale(1.12);
+    filter: drop-shadow(0 0 12px rgba(0, 245, 212, 0.85));
+}
+
+.buff-icon {
+    width: 14px;
+    height: 14px;
+    margin-right: 4px;
+    vertical-align: text-bottom;
+}

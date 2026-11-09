@@ -97,6 +97,20 @@ window.PWONYX = window.PWONYX || {};
             this.parallaxReliefLoaded = false;
             this.parallaxReliefImg.onload = () => { this.parallaxReliefLoaded = true; };
 
+            // Preload Sci-Fi Power-up Icons
+            this.powerupIcons = {
+                wide: new Image(),
+                slow: new Image(),
+                ammo: new Image(),
+                sticky: new Image(),
+                overdrive: new Image()
+            };
+            this.powerupIcons.wide.src = 'assets/icons/powerup-larger.png';
+            this.powerupIcons.slow.src = 'assets/icons/powerup-slow.png';
+            this.powerupIcons.ammo.src = 'assets/icons/powerup-ammo.png';
+            this.powerupIcons.sticky.src = 'assets/icons/powerup-sticky.png';
+            this.powerupIcons.overdrive.src = 'assets/icons/powerup-ammo.png';
+
             // Pre-allocated Object Pools (Zero GC during gameplay)
             this.balls = new Pools.BallPool(CFG.MAX_BALLS_POOL);
             this.particles = new Pools.ParticlePool(CFG.MAX_PARTICLES);
@@ -2200,8 +2214,17 @@ window.PWONYX = window.PWONYX || {};
                 ctx.stroke();
 
                 ctx.shadowBlur = 0;
-                ctx.fillStyle = '#ffffff';
-                ctx.fillText(def.symbol, p.x, p.y + 1);
+                const iconImg = this.powerupIcons ? this.powerupIcons[p.type] : null;
+                if (iconImg && iconImg.complete && (iconImg.naturalWidth > 0 || iconImg.width > 0)) {
+                    ctx.save();
+                    ctx.globalCompositeOperation = 'screen';
+                    const iconSize = r * 2.3;
+                    ctx.drawImage(iconImg, p.x - iconSize / 2, p.y - iconSize / 2, iconSize, iconSize);
+                    ctx.restore();
+                } else {
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillText(def.symbol, p.x, p.y + 1);
+                }
             }
             ctx.restore();
         }
