@@ -737,6 +737,40 @@ window.PWONYX = window.PWONYX || {};
             osc.stop(now + 0.19);
         }
 
+        playBarrageLaunch(index = 0, total = 10) {
+            if (!this.isInitialized || this.isMuted) return;
+            const now = this.ctx.currentTime;
+            const osc = this.ctx.createOscillator();
+            const g = this.ctx.createGain();
+
+            osc.type = 'sawtooth';
+            const step = Math.min(16, Math.max(0, index));
+            const baseFreq = 340 * Math.pow(1.075, step);
+            osc.frequency.setValueAtTime(baseFreq, now);
+            osc.frequency.exponentialRampToValueAtTime(baseFreq * 1.85, now + 0.08);
+
+            g.gain.setValueAtTime(0.22, now);
+            g.gain.exponentialRampToValueAtTime(0.001, now + 0.085);
+
+            osc.connect(g);
+            g.connect(this.sfxGain);
+            osc.start(now);
+            osc.stop(now + 0.09);
+        }
+
+        getTrackCurrentTime() {
+            if (!this.isPlaying) return 0;
+            if (this.currentTrack === 'chaoz') {
+                if (this.chaozMediaEl && this.chaozMediaEl.currentTime > 0) {
+                    return this.chaozMediaEl.currentTime;
+                }
+                if (this.chaozSource && this.ctx && this.chaozStartTime > 0) {
+                    return (this.ctx.currentTime - this.chaozStartTime) % 134;
+                }
+            }
+            return this.musicElapsed;
+        }
+
         playMissPenalty() {
             if (!this.isInitialized || this.isMuted) return;
             const now = this.ctx.currentTime;

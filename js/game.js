@@ -130,6 +130,14 @@ window.PWONYX = window.PWONYX || {};
             this.screenShake = 0;
             this.chromaticFlash = 0;
 
+            // Ball Barrage State (Climax / Beat-drop stream sequence)
+            this.barrageQueue = [];
+            this.barrageTimer = 0;
+            this.barrageTriggeredCheckpoints = new Set();
+            this.isBarrageActive = false;
+            this.barrageTotalInCurrentWave = 0;
+            this.barrageIndexInCurrentWave = 0;
+
             // Active temporary buffs
             this.buffs = {
                 wide: 0,
@@ -376,6 +384,11 @@ window.PWONYX = window.PWONYX || {};
                         this.fireGhostPaddle('player1');
                     }
                 }
+                if (e.code === 'KeyB') {
+                    if (this.state === 'playing') {
+                        this.triggerBallBarrage(null, 'manual');
+                    }
+                }
                 if (e.code === 'KeyP' || e.code === 'Escape') {
                     if (this.state === 'playing' || this.state === 'paused') {
                         this.togglePause();
@@ -471,9 +484,16 @@ window.PWONYX = window.PWONYX || {};
             this.progress = 0;
             this.targetBallCount = 1;
             this.ballSpawnTimer = 0;
-            this.powerupSpawnTimer = 28.0;
-            this.ammoSpawnTimer = 1.4; // First wave of ammo items drops right at the beginning!
+            this.powerupSpawnTimer = (this.mode.specialPowerInterval || 32.0) * 0.65;
+            this.ammoSpawnTimer = 1.6; // First single ammo item drops shortly after start!
             this.screenShake = 0;
+
+            this.barrageQueue = [];
+            this.barrageTimer = 0;
+            this.barrageTriggeredCheckpoints = new Set();
+            this.isBarrageActive = false;
+            this.barrageTotalInCurrentWave = 0;
+            this.barrageIndexInCurrentWave = 0;
 
             this.buffs.wide = 0;
             this.buffs.slow = 0;
@@ -530,33 +550,163 @@ window.PWONYX = window.PWONYX || {};
         }
 
         /**
-         * Pwong 2-style bottom ball launch: balls emerge from the bottom (player's side)
-         * and shoot upward into the arena, scaling speed with the music intensity.
+         * Pwong 2-style bottom ball launch: balls emerge from behind the player's paddle
+         * (at the very bottom launcher) and shoot upward into the arena, soaring past the paddle.
          */
-        spawnBallFromBottom() {
+        spawnBallFromBottom(customSpeed = null, customColor = null, customAngle = null, customX = null) {
             const musicBoost = 1 + (Audio.musicIntensity || 0.25) * 0.16;
-            const speed = Math.min(
+            let baseSpeed = this.mode.baseBallSpeed;
+            if (this.mode.isSurvival) {
+                const survivalRatio = Math.min(1, this.elapsedTime / 90);
+                baseSpeed = 300 + survivalRatio * (this.mode.maxBallSpeed - 300) * 0.75;
+            }
+            const speed = customSpeed !== null ? customSpeed : Math.min(
                 this.mode.maxBallSpeed * CFG.SPEED_SCALE,
-                this.mode.baseBallSpeed * CFG.SPEED_SCALE * musicBoost
+                baseSpeed * CFG.SPEED_SCALE * musicBoost
             );
-            const angleOffset = (Math.random() - 0.5) * 0.68; // radians from vertical
+
+            const angleOffset = customAngle !== null ? customAngle : (Math.random() - 0.5) * 0.64; // radians from vertical
             const vx = Math.sin(angleOffset) * speed;
             const vy = -Math.abs(Math.cos(angleOffset) * speed); // always launch upward from bottom!
-            const color = NEON_BALL_COLORS[this.balls.countActive() % NEON_BALL_COLORS.length];
+            const color = customColor || NEON_BALL_COLORS[this.balls.countActive() % NEON_BALL_COLORS.length];
 
-            const baseX = this.player && this.player.x
-                ? this.player.x + (Math.random() - 0.5) * Math.min(90, this.player.width * 0.6)
-                : this.arenaX + this.arenaWidth / 2;
+            const baseX = customX !== null
+                ? customX
+                : (this.player && this.player.x
+                    ? this.player.x + (Math.random() - 0.5) * Math.min(80, this.player.width * 0.6)
+                    : this.arenaX + this.arenaWidth / 2);
             const spawnX = Math.max(
                 this.arenaX + 36,
                 Math.min(this.arenaX + this.arenaWidth - 36, baseX)
             );
-            const spawnY = this.arenaY + this.arenaHeight - CFG.PADDLE_Y_OFFSET - this.player.height / 2 - CFG.BALL_RADIUS - 4;
+
+            // Spawns strictly BEHIND the player paddle:
+            // Player paddle is at this.player.y (arenaY + arenaHeight - PADDLE_Y_OFFSET).
+            // Bottom edge of paddle is player.y + player.height / 2.
+            // Spawning below that (towards arena bottom edge) places the ball behind the paddle.
+            // As vy is negative, it shoots upward, crosses the paddle line cleanly and enters the field.
+            const paddleBottom = this.player ? (this.player.y + this.player.height / 2) : (this.arenaY + this.arenaHeight - 33);
+            const spawnY = Math.min(
+                this.arenaY + this.arenaHeight - 10,
+                paddleBottom + CFG.BALL_RADIUS + 8
+            );
 
             const b = this.balls.spawn(spawnX, spawnY, vx, vy, color);
             if (b) {
-                this.particles.shockwave(spawnX, spawnY, color, 48);
-                this.particles.burst(spawnX, spawnY, 14, color, 60, 220, 3);
+                this.particles.shockwave(spawnX, spawnY, color, 44);
+                this.particles.burst(spawnX, spawnY, 14, color, 60, 220, 3.2);
+
+                // Add upward launch thruster sparks
+                for (let p = 0; p < 6; p++) {
+                    this.particles.spawn(
+                        spawnX + (Math.random() - 0.5) * 8,
+                        spawnY,
+                        (Math.random() - 0.5) * 50,
+                        -90 - Math.random() * 140,
+                        color,
+                        3.0,
+                        0.32
+                    );
+                }
+            }
+            return b;
+        }
+
+        /**
+         * Climax Ball Barrage (Carreira de Bolinhas):
+         * Queues a rapid-fire succession of neon rainbow balls launched from behind the paddle,
+         * accompanied by screen shake, chromatic flashes, particle flares, and ascending laser SFX.
+         */
+        triggerBallBarrage(count = null, reason = 'climax') {
+            const barrageCount = count || (
+                this.mode.id === 'easy' ? 6 :
+                this.mode.id === 'medium' ? 8 :
+                this.mode.id === 'hard' ? 10 :
+                12
+            );
+
+            this.isBarrageActive = true;
+            this.barrageTotalInCurrentWave = barrageCount;
+            this.barrageIndexInCurrentWave = 0;
+            this.barrageTimer = 0;
+
+            // Escalate targetBallCount so the arena embraces the barrage balls
+            this.targetBallCount = Math.min(
+                this.mode.maxBalls,
+                Math.max(this.targetBallCount, this.balls.countActive() + Math.min(6, barrageCount))
+            );
+
+            const barrageColors = [
+                '#00f5d4', // Cyan
+                '#00bbf9', // Electric Sky
+                '#fee440', // Golden Yellow
+                '#f15bb5', // Hot Pink
+                '#ff007f', // Rose Neon
+                '#9b5de5', // Electric Purple
+                '#70e000', // Acid Lime
+                '#ff9e00', // Sun Orange
+                '#ff5400', // Hyper Coral
+                '#e0aaff', // Violet Pastel
+                '#00f5d4',
+                '#fee440'
+            ];
+
+            this.barrageQueue = [];
+            let baseSpeed = this.mode.baseBallSpeed;
+            if (this.mode.isSurvival) {
+                const survivalRatio = Math.min(1, this.elapsedTime / 90);
+                baseSpeed = 300 + survivalRatio * (this.mode.maxBallSpeed - 300) * 0.75;
+            }
+            const launchSpeed = Math.min(
+                this.mode.maxBallSpeed * CFG.SPEED_SCALE * 0.96,
+                Math.max(360, baseSpeed * CFG.SPEED_SCALE * 1.15)
+            );
+
+            for (let i = 0; i < barrageCount; i++) {
+                const t = barrageCount > 1 ? i / (barrageCount - 1) : 0.5;
+                const fanAngle = (t - 0.5) * 0.68 + (Math.random() - 0.5) * 0.12;
+                const xSpread = (t - 0.5) * Math.min(110, this.player.width * 0.75);
+                const speed = launchSpeed + (Math.random() - 0.5) * 45;
+                const color = barrageColors[i % barrageColors.length];
+
+                this.barrageQueue.push({
+                    delay: i === 0 ? 0 : 0.085, // 85ms between each ball in the rapid-fire stream
+                    color: color,
+                    speed: speed,
+                    angle: fanAngle,
+                    xSpread: xSpread,
+                    index: i
+                });
+            }
+
+            // Visual "Show de Luzes" fanfare:
+            this.screenShake = 8;
+            this.chromaticFlash = 1.0;
+            this.texts.spawn(
+                this.arenaX + this.arenaWidth / 2,
+                this.arenaY + this.arenaHeight * 0.40,
+                '⚡ CARREIRA DE BOLINHAS! ⚡',
+                '#00f5d4',
+                22,
+                1.5
+            );
+            this.texts.spawn(
+                this.arenaX + this.arenaWidth / 2,
+                this.arenaY + this.arenaHeight * 0.40 + 32,
+                '★ SHOW DE LUZES • CLÍMAX ★',
+                '#fee440',
+                15,
+                1.3
+            );
+
+            // Initial shockwave and particle blast at launcher
+            const padX = this.player ? this.player.x : this.arenaX + this.arenaWidth / 2;
+            const launchY = this.player ? (this.player.y + this.player.height / 2 + 10) : (this.arenaY + this.arenaHeight - 20);
+            this.particles.shockwave(padX, launchY, '#00f5d4', 85);
+            this.particles.burst(padX, launchY, 28, '#fee440', 100, 320, 4);
+
+            if (Audio && Audio.playScoreGoal) {
+                Audio.playScoreGoal();
             }
         }
 
@@ -744,9 +894,67 @@ window.PWONYX = window.PWONYX || {};
                 );
             }
 
-            // Ensure active balls match targetBallCount (always spawning upward from the bottom!)
+            // Process sequential barrage queue (Carreira de Bolinhas)
+            if (this.barrageQueue.length > 0) {
+                this.barrageTimer -= dt;
+                if (this.barrageTimer <= 0) {
+                    const item = this.barrageQueue.shift();
+                    this.barrageTimer = item.delay || 0.085;
+                    this.barrageIndexInCurrentWave++;
+
+                    const spawnX = this.player ? (this.player.x + item.xSpread) : (this.arenaX + this.arenaWidth / 2);
+                    const b = this.spawnBallFromBottom(item.speed, item.color, item.angle, spawnX);
+                    if (b) {
+                        this.chromaticFlash = Math.max(this.chromaticFlash, 0.45);
+                        this.particles.shockwave(b.x, b.y, item.color, 46);
+                        this.particles.burst(b.x, b.y, 16, item.color, 70, 240, 3.4);
+
+                        // Luminous vertical thruster plume
+                        for (let p = 0; p < 7; p++) {
+                            this.particles.spawn(
+                                b.x + (Math.random() - 0.5) * 10,
+                                b.y + 4,
+                                (Math.random() - 0.5) * 45,
+                                -80 - Math.random() * 150,
+                                item.color,
+                                3.2,
+                                0.35
+                            );
+                        }
+
+                        if (Audio && Audio.playBarrageLaunch) {
+                            Audio.playBarrageLaunch(item.index, this.barrageTotalInCurrentWave);
+                        }
+                    }
+                }
+            } else {
+                this.isBarrageActive = false;
+            }
+
+            // Music Climax Checkpoint Detection:
+            // In Chaoz Fantasy, the first massive climax drop hits right at 24.5s!
+            // Secondary peaks occur at 60.5s and (in survival) at 115s.
+            const trackTime = Audio.getTrackCurrentTime ? Audio.getTrackCurrentTime() : 0;
+            const playhead = Math.max(this.elapsedTime, trackTime);
+
+            if (playhead >= 24.4 && !this.barrageTriggeredCheckpoints.has('drop_1')) {
+                this.barrageTriggeredCheckpoints.add('drop_1');
+                this.triggerBallBarrage(null, 'drop_1');
+            } else if (playhead >= 60.4 && !this.barrageTriggeredCheckpoints.has('drop_2')) {
+                this.barrageTriggeredCheckpoints.add('drop_2');
+                this.triggerBallBarrage(null, 'drop_2');
+            } else if (this.mode.isSurvival && playhead >= 115.0 && !this.barrageTriggeredCheckpoints.has('drop_survival')) {
+                this.barrageTriggeredCheckpoints.add('drop_survival');
+                this.triggerBallBarrage(12, 'drop_survival');
+            } else if (Audio.currentTrack !== 'chaoz' && this.elapsedTime >= 24.4 && !this.barrageTriggeredCheckpoints.has('synth_drop_1')) {
+                this.barrageTriggeredCheckpoints.add('synth_drop_1');
+                this.triggerBallBarrage(8, 'synth_drop_1');
+            }
+
+            // Ensure active balls match targetBallCount (always spawning upward from behind the paddle!)
+            // Only refill when not actively launching a barrage sequence
             const activeBallCount = this.balls.countActive();
-            if (activeBallCount < this.targetBallCount) {
+            if (activeBallCount < this.targetBallCount && this.barrageQueue.length === 0) {
                 this.spawnBallFromBottom();
             }
 
@@ -798,41 +1006,35 @@ window.PWONYX = window.PWONYX || {};
             this.opponent.vx = (this.opponent.x - this.opponent.prevX) / Math.max(dt, 0.001);
 
             // --- Spawn Power-Ups & Ghost Ammo Orbs ---
-            // You always start at 0 ammo and earn +10 per item picked up.
-            // More ammo items fall at the beginning (up to 3 at once), decreasing as stage/phase difficulty increases.
+            // Strictly 1 item at a time (never 3 simultaneously).
+            // Early levels/easy mode: falls more frequently (shorter timer).
+            // Harder levels/later progress: drops are spaced out with longer intervals.
             const mastLevel = this.upgrades.powerupDuration || 0;
             const freqMult = 1 - mastLevel * 0.06;
-            const baseAmmoInterval = this.mode.ammoSpawnInterval || 4.8;
+            const baseAmmoInterval = this.mode.ammoSpawnInterval || 4.5;
             const progressRatio = this.mode.isSurvival
-                ? Math.min(1, this.elapsedTime / 75)
+                ? Math.min(1, this.elapsedTime / 90)
                 : Math.min(1, this.progress / 100);
 
             this.ammoSpawnTimer -= dt;
             if (this.ammoSpawnTimer <= 0) {
-                const baseDropCount = typeof this.mode.ammoDropCount === 'number' ? this.mode.ammoDropCount : 3;
-                // Drop up to baseDropCount (3 in Easy/Medium/Survival start) early on, tapering down to 1 as phase progresses
-                const dropReduction = Math.floor(progressRatio * baseDropCount);
-                const dropCount = Math.max(1, baseDropCount - dropReduction);
+                // Next single ammo drop timer: short in easy mode, long in hard/insane
+                const intervalScale = 1 + progressRatio * 0.42;
+                this.ammoSpawnTimer = (baseAmmoInterval * intervalScale + Math.random() * 1.6) * freqMult;
 
-                // Interval also lengthens slightly as the phase gets harder
-                this.ammoSpawnTimer = (baseAmmoInterval * 1.6 * (1 + progressRatio * 0.45) + Math.random() * 3.0) * freqMult;
-
-                const usableWidth = this.arenaWidth - 140;
-                const laneWidth = usableWidth / dropCount;
-                for (let d = 0; d < dropCount; d++) {
-                    const spawnX = this.arenaX + 70 + d * laneWidth + Math.random() * Math.max(20, laneWidth - 20);
-                    const spawnY = this.arenaY + 75 + d * 28;
-                    this.powerups.spawn(
-                        spawnX,
-                        spawnY,
-                        115 + Math.random() * 45,
-                        'ammo'
-                    );
-                }
+                // Spawn strictly 1 single ammo item at a time!
+                const spawnX = this.arenaX + 80 + Math.random() * (this.arenaWidth - 160);
+                const spawnY = this.arenaY + 70;
+                this.powerups.spawn(
+                    spawnX,
+                    spawnY,
+                    115 + Math.random() * 40,
+                    'ammo'
+                );
             }
 
-            // Special power-ups (wide / slow / magnet / 2x) are rare and sporadic:
-            // one at a time, never while a buff is still active or another power-up is falling.
+            // Special power-ups (wide / slow / magnet / 2x):
+            // Strictly 1 at a time, spaced apart from ammo drops so they never collide or clutter.
             this.powerupSpawnTimer -= dt;
             if (this.powerupSpawnTimer <= 0) {
                 const buffActive = this.buffs.wide > 0 || this.buffs.slow > 0 || this.buffs.sticky > 0 || this.buffs.overdrive > 0;
@@ -842,15 +1044,22 @@ window.PWONYX = window.PWONYX || {};
                     if (q.active && q.type !== 'ammo') { specialFalling = true; break; }
                 }
                 if (buffActive || specialFalling) {
-                    this.powerupSpawnTimer = 6.0; // re-check shortly
+                    this.powerupSpawnTimer = 5.0; // re-check shortly
                 } else {
-                    this.powerupSpawnTimer = (38.0 + Math.random() * 22.0) * freqMult;
+                    const baseSpecialInterval = this.mode.specialPowerInterval || 34.0;
+                    this.powerupSpawnTimer = (baseSpecialInterval * (1 + progressRatio * 0.35) + Math.random() * 6.0) * freqMult;
+
+                    // Ensure ammo drop doesn't happen at the exact same instant
+                    if (this.ammoSpawnTimer < 2.5) {
+                        this.ammoSpawnTimer = 2.5 + Math.random() * 1.5;
+                    }
+
                     const types = ['wide', 'slow', 'sticky', 'overdrive'];
                     const pick = types[Math.floor(Math.random() * types.length)];
                     this.powerups.spawn(
-                        this.arenaX + 60 + Math.random() * (this.arenaWidth - 120),
-                        this.arenaY + 80,
-                        105 + Math.random() * 40,
+                        this.arenaX + 90 + Math.random() * (this.arenaWidth - 180),
+                        this.arenaY + 75,
+                        100 + Math.random() * 35,
                         pick
                     );
                 }
@@ -1098,14 +1307,22 @@ window.PWONYX = window.PWONYX || {};
                 }
             }
 
+            let aiSpeed = this.mode.aiSpeed;
+            let aiReaction = this.mode.aiReaction;
+            if (this.mode.isSurvival) {
+                const survivalRatio = Math.min(1, this.elapsedTime / 90);
+                aiSpeed = 330 + survivalRatio * 380;
+                aiReaction = 0.72 + survivalRatio * 0.25;
+            }
+
             let targetX = this.arenaX + this.arenaWidth / 2;
             if (bestBall) {
                 // Predict slightly ahead with AI reaction factor
-                targetX = bestBall.x + bestBall.vx * shortestTime * 0.35 * this.mode.aiReaction;
+                targetX = bestBall.x + bestBall.vx * shortestTime * 0.35 * aiReaction;
             }
 
             const diff = targetX - this.opponent.x;
-            const maxStep = this.mode.aiSpeed * CFG.SPEED_SCALE * dt;
+            const maxStep = aiSpeed * CFG.SPEED_SCALE * dt;
             if (Math.abs(diff) <= maxStep) {
                 this.opponent.x = targetX;
             } else {
