@@ -253,10 +253,10 @@ window.PWONYX = window.PWONYX || {};
 
             const b = game.buffs;
             const buffs = [];
-            if (b.wide > 0) buffs.push(`<span class="buff" style="--c:#00bbf9">↔ ${b.wide.toFixed(0)}s</span>`);
-            if (b.slow > 0) buffs.push(`<span class="buff" style="--c:#fee440">⏳ ${b.slow.toFixed(0)}s</span>`);
-            if (b.sticky > 0) buffs.push(`<span class="buff" style="--c:#f15bb5">🧲 ${b.sticky.toFixed(0)}s</span>`);
-            if (b.overdrive > 0) buffs.push(`<span class="buff" style="--c:#ff007f">2× ${b.overdrive.toFixed(0)}s</span>`);
+            if (b.wide > 0) buffs.push(`<span class="buff" style="--c:#00bbf9"><img src="assets/icons/powerup-larger.png" alt="" class="pwonyx-icon buff-icon" /> ${b.wide.toFixed(0)}s</span>`);
+            if (b.slow > 0) buffs.push(`<span class="buff" style="--c:#fee440"><img src="assets/icons/powerup-slow.png" alt="" class="pwonyx-icon buff-icon" /> ${b.slow.toFixed(0)}s</span>`);
+            if (b.sticky > 0) buffs.push(`<span class="buff" style="--c:#f15bb5"><img src="assets/icons/powerup-sticky.png" alt="" class="pwonyx-icon buff-icon" /> ${b.sticky.toFixed(0)}s</span>`);
+            if (b.overdrive > 0) buffs.push(`<span class="buff" style="--c:#ff007f"><img src="assets/icons/powerup-ammo.png" alt="" class="pwonyx-icon buff-icon" /> 2× ${b.overdrive.toFixed(0)}s</span>`);
             $('hud-active-buffs').innerHTML = buffs.join('');
         }
 
