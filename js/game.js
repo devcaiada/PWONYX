@@ -109,7 +109,7 @@ window.PWONYX = window.PWONYX || {};
             this.powerupIcons.slow.src = 'assets/icons/powerup-slow.png';
             this.powerupIcons.ammo.src = 'assets/icons/powerup-ammo.png';
             this.powerupIcons.sticky.src = 'assets/icons/powerup-sticky.png';
-            this.powerupIcons.overdrive.src = 'assets/icons/powerup-ammo.png';
+            this.powerupIcons.overdrive.src = 'assets/icons/powerup-overdrive.png';
 
             // Pre-allocated Object Pools (Zero GC during gameplay)
             this.balls = new Pools.BallPool(CFG.MAX_BALLS_POOL);
@@ -734,15 +734,22 @@ window.PWONYX = window.PWONYX || {};
             if (pad.ghostAmmo <= 0) return;
 
             pad.ghostAmmo--;
+            const isOnBeat = isP1 && (Audio.beatPulse || 0) >= 0.42;
             const boostLevel = this.upgrades.ghostBooster || 0;
-            const ghostWidth = pad.width * (1.05 + boostLevel * 0.06);
+            const ghostWidth = pad.width * (1.05 + boostLevel * 0.06 + (isOnBeat ? 0.12 : 0));
             const hits = 1 + Math.floor((boostLevel + 1) / 2);
-            const vy = isP1 ? -380 : 380;
-            const color = isP1 ? '#00f5d4' : '#ff007f';
+            const vy = (isP1 ? -380 : 380) * (isOnBeat ? 1.15 : 1.0);
+            const color = isP1 ? (isOnBeat ? '#fee440' : '#00f5d4') : '#ff007f';
 
             this.ghosts.spawn(pad.x, pad.y + (isP1 ? -14 : 14), vy, ghostWidth, hits, owner, color);
-            this.particles.burst(pad.x, pad.y, 16, color, 50, 190, 3);
-            Audio.playGhostLaunch();
+            this.particles.burst(pad.x, pad.y, isOnBeat ? 22 : 16, color, 50, 190, 3);
+            if (isOnBeat) {
+                this.particles.shockwave(pad.x, pad.y - 10, '#fee440', 55);
+                const bonus = Math.round(10 * this.mode.scoreMultiplier);
+                this.score += bonus;
+                this.texts.spawn(pad.x, pad.y - 28, `🎵 BEAT LAUNCH! +${bonus}`, '#fee440', 13, 0.75);
+            }
+            Audio.playGhostLaunch(isOnBeat);
         }
 
         loop(now) {
@@ -945,24 +952,28 @@ window.PWONYX = window.PWONYX || {};
                 this.isBarrageActive = false;
             }
 
-            // Music Climax Checkpoint Detection:
-            // In Chaoz Fantasy, the first massive climax drop hits right at 24.5s!
-            // Secondary peaks occur at 60.5s and (in survival) at 115s.
+            // Music Climax Checkpoint & Dynamic Drop Detection:
+            // 1. In Chaoz Fantasy, use true audible track time so loading latency never desyncs drops!
+            // 2. In Procedural tracks (8-bar build-up & drop) or Custom Suno Stems (FFT energy drop),
+            //    consume dynamic drops directly from the AudioEngine.
             const trackTime = Audio.getTrackCurrentTime ? Audio.getTrackCurrentTime() : 0;
-            const playhead = Math.max(this.elapsedTime, trackTime);
+            const chaozPlayhead = Audio.currentTrack === 'chaoz'
+                ? (trackTime > 0 ? trackTime : (Audio.isMuted ? this.elapsedTime : 0))
+                : trackTime;
 
-            if (playhead >= 24.4 && !this.barrageTriggeredCheckpoints.has('drop_1')) {
-                this.barrageTriggeredCheckpoints.add('drop_1');
-                this.triggerBallBarrage(null, 'drop_1');
-            } else if (playhead >= 60.4 && !this.barrageTriggeredCheckpoints.has('drop_2')) {
-                this.barrageTriggeredCheckpoints.add('drop_2');
-                this.triggerBallBarrage(null, 'drop_2');
-            } else if (this.mode.isSurvival && playhead >= 115.0 && !this.barrageTriggeredCheckpoints.has('drop_survival')) {
-                this.barrageTriggeredCheckpoints.add('drop_survival');
-                this.triggerBallBarrage(12, 'drop_survival');
-            } else if (Audio.currentTrack !== 'chaoz' && this.elapsedTime >= 24.4 && !this.barrageTriggeredCheckpoints.has('synth_drop_1')) {
-                this.barrageTriggeredCheckpoints.add('synth_drop_1');
-                this.triggerBallBarrage(8, 'synth_drop_1');
+            if (Audio.currentTrack === 'chaoz') {
+                if (chaozPlayhead >= 24.4 && !this.barrageTriggeredCheckpoints.has('drop_1')) {
+                    this.barrageTriggeredCheckpoints.add('drop_1');
+                    this.triggerBallBarrage(null, 'drop_1');
+                } else if (chaozPlayhead >= 60.4 && !this.barrageTriggeredCheckpoints.has('drop_2')) {
+                    this.barrageTriggeredCheckpoints.add('drop_2');
+                    this.triggerBallBarrage(null, 'drop_2');
+                } else if (this.mode.isSurvival && chaozPlayhead >= 115.0 && !this.barrageTriggeredCheckpoints.has('drop_survival')) {
+                    this.barrageTriggeredCheckpoints.add('drop_survival');
+                    this.triggerBallBarrage(12, 'drop_survival');
+                }
+            } else if (Audio.consumeDynamicDrop && Audio.consumeDynamicDrop()) {
+                this.triggerBallBarrage(null, 'dynamic_drop');
             }
 
             // Ensure active balls match targetBallCount (always spawning upward from behind the paddle!)
@@ -1031,8 +1042,8 @@ window.PWONYX = window.PWONYX || {};
                 : Math.min(1, this.progress / 100);
 
             this.ammoSpawnTimer -= dt;
-            if (this.ammoSpawnTimer <= 0) {
-                // Next single ammo drop timer: short in easy mode, long in hard/insane
+            if (this.ammoSpawnTimer <= 0 && (beatPulse > 0.35 || this.ammoSpawnTimer <= -0.32)) {
+                // Quantized to the musical beat! Next single ammo drop timer: short in easy mode, long in hard/insane
                 const intervalScale = 1 + progressRatio * 0.42;
                 this.ammoSpawnTimer = (baseAmmoInterval * intervalScale + Math.random() * 1.6) * freqMult;
 
@@ -1045,12 +1056,13 @@ window.PWONYX = window.PWONYX || {};
                     115 + Math.random() * 40,
                     'ammo'
                 );
+                this.particles.shockwave(spawnX, spawnY, '#00f5d4', 32);
             }
 
             // Special power-ups (wide / slow / magnet / 2x):
-            // Strictly 1 at a time, spaced apart from ammo drops so they never collide or clutter.
+            // Strictly 1 at a time, beat-quantized and spaced apart from ammo drops so they never collide or clutter.
             this.powerupSpawnTimer -= dt;
-            if (this.powerupSpawnTimer <= 0) {
+            if (this.powerupSpawnTimer <= 0 && (beatPulse > 0.35 || this.powerupSpawnTimer <= -0.32)) {
                 const buffActive = this.buffs.wide > 0 || this.buffs.slow > 0 || this.buffs.sticky > 0 || this.buffs.overdrive > 0;
                 let specialFalling = false;
                 for (let i = 0; i < this.powerups.size; i++) {
@@ -1283,9 +1295,13 @@ window.PWONYX = window.PWONYX || {};
             const halfW = paddle.width / 2;
             const relIntersect = Math.max(-1, Math.min(1, (ball.x - paddle.x) / halfW));
 
+            // Check if player hit on the musical beat!
+            const isRhythmHit = dirY < 0 && (Audio.beatPulse || 0) >= 0.45;
+            const beatSpeedBoost = isRhythmHit ? 1.065 : 1.035;
+
             // Current speed scales slightly up to mode.maxBallSpeed
             const currentSpeed = Math.hypot(ball.vx, ball.vy);
-            const nextSpeed = Math.min(this.mode.maxBallSpeed * CFG.SPEED_SCALE, currentSpeed * 1.035);
+            const nextSpeed = Math.min(this.mode.maxBallSpeed * CFG.SPEED_SCALE, currentSpeed * beatSpeedBoost);
 
             // Bounce angle up to 62 degrees at paddle extremes
             const bounceAngle = relIntersect * (Math.PI * 0.34);
@@ -1301,9 +1317,29 @@ window.PWONYX = window.PWONYX || {};
                 ? paddle.y - paddle.height / 2 - ball.radius - 1
                 : paddle.y + paddle.height / 2 + ball.radius + 1;
 
-            const sparkColor = ball.isCurvedShot ? '#fee440' : paddle.color;
-            this.particles.burst(ball.x, ball.y, ball.isCurvedShot ? 16 : 10, sparkColor, 60, 220, 3);
-            Audio.playBounce(dirY < 0 ? 1.15 : 0.95, ball.isCurvedShot);
+            const sparkColor = ball.isCurvedShot ? '#fee440' : (isRhythmHit ? '#00f5d4' : paddle.color);
+            this.particles.burst(ball.x, ball.y, (ball.isCurvedShot || isRhythmHit) ? 18 : 10, sparkColor, 60, 230, 3.2);
+
+            if (isRhythmHit) {
+                const overdriveMult = this.buffs.overdrive > 0 ? 2 : 1;
+                const rhythmPts = Math.max(5, Math.round(8 * this.mode.scoreMultiplier * overdriveMult));
+                this.score += rhythmPts;
+                this.particles.shockwave(ball.x, ball.y, '#fee440', 48);
+                // Throttle floating text slightly when many balls bounce on the same frame
+                if (!this._lastRhythmTextTime || this.elapsedTime - this._lastRhythmTextTime > 0.28) {
+                    this._lastRhythmTextTime = this.elapsedTime;
+                    this.texts.spawn(
+                        ball.x,
+                        ball.y - 18,
+                        ball.isCurvedShot ? `🎵 RHYTHM CURVE! +${rhythmPts}` : `🎵 RHYTHM! +${rhythmPts}`,
+                        '#fee440',
+                        13,
+                        0.68
+                    );
+                }
+            }
+
+            Audio.playBounce(dirY < 0 ? 1.15 : 0.95, ball.isCurvedShot, isRhythmHit);
         }
 
         updateAIPaddle(dt) {
@@ -2076,6 +2112,11 @@ window.PWONYX = window.PWONYX || {};
             ctx.drawImage(this.trailCanvas, 0, 0, this.viewWidth, this.viewHeight);
             ctx.globalCompositeOperation = 'source-over';
 
+            // 4.5. Pre-Drop Build-Up Energy Vortex (4s before Climax Barrage)
+            if (Audio.buildUpCharge > 0.04) {
+                this.renderBuildUpEffect(ctx, Audio.buildUpCharge, pulse);
+            }
+
             // 5. Power-ups, ghost paddles, paddles
             this.renderPowerUps(ctx);
             this.renderGhostPaddles(ctx);
@@ -2083,7 +2124,7 @@ window.PWONYX = window.PWONYX || {};
             this.renderPaddle(ctx, this.player, true, pulse);
 
             // 6. Ball heads, shockwaves, floating texts
-            this.renderBalls(ctx);
+            this.renderBalls(ctx, pulse);
             this.renderParticles(ctx);
             this.renderFloatingTexts(ctx);
 
@@ -2229,20 +2270,64 @@ window.PWONYX = window.PWONYX || {};
             ctx.restore();
         }
 
-        renderBalls(ctx) {
+        renderBuildUpEffect(ctx, charge, pulse) {
+            ctx.save();
+            const cx = this.player ? this.player.x : (this.arenaX + this.arenaWidth / 2);
+            const cy = this.arenaY + this.arenaHeight - CFG.PADDLE_Y_OFFSET;
+
+            // Converging neon rings around the bottom launcher syncing with the snare build-up
+            for (let ring = 0; ring < 3; ring++) {
+                const phase = ((this.elapsedTime * (2.2 + charge * 3.5) + ring * 0.33) % 1);
+                const rad = (1 - phase) * (95 + charge * 65);
+                const alpha = phase * (0.28 + charge * 0.45);
+
+                ctx.strokeStyle = ring % 2 === 0 ? `rgba(254, 228, 64, ${alpha})` : `rgba(0, 245, 212, ${alpha})`;
+                ctx.lineWidth = 1.5 + charge * 2.2;
+                ctx.beginPath();
+                ctx.arc(cx, cy, Math.max(4, rad), Math.PI, Math.PI * 2);
+                ctx.stroke();
+            }
+
+            // Rising energy label above launcher when build-up is > 25%
+            if (charge > 0.25) {
+                ctx.font = "800 12px 'Orbitron', system-ui, sans-serif";
+                ctx.textAlign = 'center';
+                ctx.fillStyle = `rgba(254, 228, 64, ${Math.min(1, charge * 1.1)})`;
+                const pct = Math.min(100, Math.round(charge * 100));
+                ctx.fillText(`⚡ DROP CARREGANDO ${pct}% ⚡`, this.arenaX + this.arenaWidth / 2, this.arenaY + this.arenaHeight - 10);
+            }
+            ctx.restore();
+        }
+
+        renderBalls(ctx, pulse = 0) {
+            const beatScale = 1 + pulse * 0.18;
             for (let i = 0; i < this.balls.size; i++) {
                 const b = this.balls.items[i];
                 if (!b.active) continue;
 
+                const r = b.radius * beatScale;
+                const ballColor = b.isCurvedShot ? '#fee440' : b.color;
+
+                // Beat-reactive outer pulse ring when bass hits
+                if (pulse > 0.45) {
+                    ctx.strokeStyle = ballColor;
+                    ctx.globalAlpha = (pulse - 0.35) * 0.65;
+                    ctx.lineWidth = 1.6;
+                    ctx.beginPath();
+                    ctx.arc(b.x, b.y, r * 1.45, 0, Math.PI * 2);
+                    ctx.stroke();
+                    ctx.globalAlpha = 1;
+                }
+
                 // Colored body + white-hot core (the glow comes from the trail layer)
-                ctx.fillStyle = b.isCurvedShot ? '#fee440' : b.color;
+                ctx.fillStyle = ballColor;
                 ctx.beginPath();
-                ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2);
+                ctx.arc(b.x, b.y, r, 0, Math.PI * 2);
                 ctx.fill();
 
                 ctx.fillStyle = '#ffffff';
                 ctx.beginPath();
-                ctx.arc(b.x, b.y, b.radius * 0.6, 0, Math.PI * 2);
+                ctx.arc(b.x, b.y, r * 0.6, 0, Math.PI * 2);
                 ctx.fill();
             }
         }

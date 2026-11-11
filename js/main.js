@@ -16,12 +16,13 @@ window.PWONYX = window.PWONYX || {};
         achievements: {},
         highScores: {},
         stats: { matchesPlayed: 0, ghostIntercepts: 0, curveGoals: 0, powerUpsCollected: 0 },
-        settings: { tunnel: 'subtle', trailFade: 0.075 }
+        settings: { tunnel: 'subtle', trailFade: 0.075, track: 'chaoz', autoLayering: true, muted: false }
     };
 
     let saveData = loadSaveData();
     let game = null;
     const $ = (id) => document.getElementById(id);
+    const hudCache = { score: '', balls: '', ammo: '', progressW: '', progressBg: '', buffsHtml: '' };
 
     function loadSaveData() {
         try {
@@ -176,6 +177,19 @@ window.PWONYX = window.PWONYX || {};
 
     // ---------------- Music & visual settings ----------------
     function setupMusicSettings() {
+        // Restore persisted audio preferences
+        if (saveData.settings.track && saveData.settings.track !== 'suno') {
+            Audio.currentTrack = saveData.settings.track;
+            $('select-audio-track').value = saveData.settings.track;
+        }
+        if (typeof saveData.settings.autoLayering === 'boolean') {
+            Audio.autoLayering = saveData.settings.autoLayering;
+            $('toggle-auto-stems').checked = saveData.settings.autoLayering;
+        }
+        if (saveData.settings.muted) {
+            Audio.isMuted = true;
+        }
+
         ['drums', 'bass', 'arp', 'lead'].forEach((key) => {
             const fileInput = $(`file-stem-${key}`);
             const statusEl = $(`status-stem-${key}`);
@@ -198,16 +212,26 @@ window.PWONYX = window.PWONYX || {};
             slider.addEventListener('input', (e) => {
                 Audio.autoLayering = false;
                 $('toggle-auto-stems').checked = false;
+                saveData.settings.autoLayering = false;
+                persistSave();
                 Audio.setManualStemLevel(key, parseFloat(e.target.value));
             });
         });
 
         $('toggle-auto-stems').addEventListener('change', (e) => {
             Audio.autoLayering = e.target.checked;
+            saveData.settings.autoLayering = e.target.checked;
+            persistSave();
             if (game) Audio.updateAdaptiveLayers(game.balls.countActive());
         });
 
-        $('select-audio-track').addEventListener('change', (e) => Audio.setTrack(e.target.value));
+        $('select-audio-track').addEventListener('change', (e) => {
+            Audio.setTrack(e.target.value);
+            if (e.target.value !== 'suno') {
+                saveData.settings.track = e.target.value;
+                persistSave();
+            }
+        });
 
         const tunnel = $('select-tunnel');
         tunnel.value = saveData.settings.tunnel;
@@ -235,20 +259,37 @@ window.PWONYX = window.PWONYX || {};
     // ---------------- HUD ----------------
     function updateHUDLoop() {
         if (game && game.state !== 'menu') {
-            $('hud-score').textContent = game.score.toLocaleString('pt-BR');
-            $('hud-balls').textContent = game.balls.countActive();
+            const scoreStr = game.score.toLocaleString('pt-BR');
+            if (hudCache.score !== scoreStr) {
+                hudCache.score = scoreStr;
+                $('hud-score').textContent = scoreStr;
+            }
+
+            const ballsStr = String(game.balls.countActive());
+            if (hudCache.balls !== ballsStr) {
+                hudCache.balls = ballsStr;
+                $('hud-balls').textContent = ballsStr;
+            }
+
             const ammoEl = $('hud-ammo');
             if (ammoEl && game.player) {
-                ammoEl.textContent = game.player.ghostAmmo;
+                const ammoStr = String(game.player.ghostAmmo);
+                if (hudCache.ammo !== ammoStr) {
+                    hudCache.ammo = ammoStr;
+                    ammoEl.textContent = ammoStr;
+                }
             }
 
             const fill = $('hud-progress-fill');
-            if (game.mode.isSurvival) {
-                fill.style.width = `${game.survivalHealth}%`;
-                fill.style.background = game.survivalHealth < 30 ? '#ff0055' : '';
-            } else {
-                fill.style.width = `${game.progress}%`;
-                fill.style.background = '';
+            const progressW = game.mode.isSurvival ? `${game.survivalHealth.toFixed(1)}%` : `${game.progress.toFixed(1)}%`;
+            const progressBg = (game.mode.isSurvival && game.survivalHealth < 30) ? '#ff0055' : '';
+            if (hudCache.progressW !== progressW) {
+                hudCache.progressW = progressW;
+                fill.style.width = progressW;
+            }
+            if (hudCache.progressBg !== progressBg) {
+                hudCache.progressBg = progressBg;
+                fill.style.background = progressBg;
             }
 
             const b = game.buffs;
@@ -256,8 +297,12 @@ window.PWONYX = window.PWONYX || {};
             if (b.wide > 0) buffs.push(`<span class="buff" style="--c:#00bbf9"><img src="assets/icons/powerup-larger.png" alt="" class="pwonyx-icon buff-icon" /> ${b.wide.toFixed(0)}s</span>`);
             if (b.slow > 0) buffs.push(`<span class="buff" style="--c:#fee440"><img src="assets/icons/powerup-slow.png" alt="" class="pwonyx-icon buff-icon" /> ${b.slow.toFixed(0)}s</span>`);
             if (b.sticky > 0) buffs.push(`<span class="buff" style="--c:#f15bb5"><img src="assets/icons/powerup-sticky.png" alt="" class="pwonyx-icon buff-icon" /> ${b.sticky.toFixed(0)}s</span>`);
-            if (b.overdrive > 0) buffs.push(`<span class="buff" style="--c:#ff007f"><img src="assets/icons/powerup-ammo.png" alt="" class="pwonyx-icon buff-icon" /> 2× ${b.overdrive.toFixed(0)}s</span>`);
-            $('hud-active-buffs').innerHTML = buffs.join('');
+            if (b.overdrive > 0) buffs.push(`<span class="buff" style="--c:#ff007f"><img src="assets/icons/powerup-overdrive.png" alt="" class="pwonyx-icon buff-icon" /> 2× ${b.overdrive.toFixed(0)}s</span>`);
+            const buffsHtml = buffs.join('');
+            if (hudCache.buffsHtml !== buffsHtml) {
+                hudCache.buffsHtml = buffsHtml;
+                $('hud-active-buffs').innerHTML = buffsHtml;
+            }
         }
 
         const fps = $('hud-telemetry');
@@ -320,6 +365,8 @@ window.PWONYX = window.PWONYX || {};
 
     function toggleMute() {
         const muted = Audio.toggleMute();
+        saveData.settings.muted = muted;
+        persistSave();
         showToast(muted ? '🔇 Som desligado' : '🔊 Som ligado');
     }
 
