@@ -178,7 +178,7 @@ window.PWONYX = window.PWONYX || {};
     // ---------------- Music & visual settings ----------------
     function setupMusicSettings() {
         // Restore persisted audio preferences
-        if (saveData.settings.track && saveData.settings.track !== 'suno') {
+        if (saveData.settings.track) {
             Audio.currentTrack = saveData.settings.track;
             $('select-audio-track').value = saveData.settings.track;
         }
@@ -188,6 +188,46 @@ window.PWONYX = window.PWONYX || {};
         }
         if (saveData.settings.muted) {
             Audio.isMuted = true;
+        }
+
+        // Restore saved Suno stems from IndexedDB if available
+        if (Audio.restoreSavedStems) {
+            Audio.restoreSavedStems().then((restored) => {
+                let hasAny = false;
+                Object.keys(restored).forEach((key) => {
+                    const info = restored[key];
+                    const statusEl = $(`status-stem-${key}`);
+                    if (statusEl && info) {
+                        statusEl.textContent = `${info.name} · ${info.duration.toFixed(1)}s`;
+                        statusEl.classList.add('loaded');
+                        hasAny = true;
+                    }
+                });
+                if (!hasAny && saveData.settings.track === 'suno') {
+                    Audio.currentTrack = 'chaoz';
+                    $('select-audio-track').value = 'chaoz';
+                }
+            });
+        }
+
+        const clearStemsBtn = $('btn-clear-stems');
+        if (clearStemsBtn) {
+            clearStemsBtn.addEventListener('click', async () => {
+                await Audio.clearCustomStems();
+                ['drums', 'bass', 'arp', 'lead'].forEach((key) => {
+                    const statusEl = $(`status-stem-${key}`);
+                    if (statusEl) {
+                        statusEl.textContent = 'synth';
+                        statusEl.classList.remove('loaded');
+                    }
+                    const inputEl = $(`file-stem-${key}`);
+                    if (inputEl) inputEl.value = '';
+                });
+                $('select-audio-track').value = Audio.currentTrack;
+                saveData.settings.track = Audio.currentTrack;
+                persistSave();
+                showToast('🧹 Stems customizados removidos');
+            });
         }
 
         ['drums', 'bass', 'arp', 'lead'].forEach((key) => {
@@ -204,6 +244,8 @@ window.PWONYX = window.PWONYX || {};
                     statusEl.textContent = `${info.name} · ${info.duration.toFixed(1)}s`;
                     statusEl.classList.add('loaded');
                     $('select-audio-track').value = 'suno';
+                    saveData.settings.track = 'suno';
+                    persistSave();
                 } catch (err) {
                     statusEl.textContent = 'erro ao ler o arquivo';
                 }
@@ -227,10 +269,8 @@ window.PWONYX = window.PWONYX || {};
 
         $('select-audio-track').addEventListener('change', (e) => {
             Audio.setTrack(e.target.value);
-            if (e.target.value !== 'suno') {
-                saveData.settings.track = e.target.value;
-                persistSave();
-            }
+            saveData.settings.track = e.target.value;
+            persistSave();
         });
 
         const tunnel = $('select-tunnel');
@@ -257,27 +297,20 @@ window.PWONYX = window.PWONYX || {};
     }
 
     // ---------------- HUD ----------------
+    function setCachedText(cacheKey, elId, value) {
+        if (hudCache[cacheKey] !== value) {
+            hudCache[cacheKey] = value;
+            const el = $(elId);
+            if (el) el.textContent = value;
+        }
+    }
+
     function updateHUDLoop() {
         if (game && game.state !== 'menu') {
-            const scoreStr = game.score.toLocaleString('pt-BR');
-            if (hudCache.score !== scoreStr) {
-                hudCache.score = scoreStr;
-                $('hud-score').textContent = scoreStr;
-            }
-
-            const ballsStr = String(game.balls.countActive());
-            if (hudCache.balls !== ballsStr) {
-                hudCache.balls = ballsStr;
-                $('hud-balls').textContent = ballsStr;
-            }
-
-            const ammoEl = $('hud-ammo');
-            if (ammoEl && game.player) {
-                const ammoStr = String(game.player.ghostAmmo);
-                if (hudCache.ammo !== ammoStr) {
-                    hudCache.ammo = ammoStr;
-                    ammoEl.textContent = ammoStr;
-                }
+            setCachedText('score', 'hud-score', game.score.toLocaleString('pt-BR'));
+            setCachedText('balls', 'hud-balls', String(game.balls.countActive()));
+            if (game.player) {
+                setCachedText('ammo', 'hud-ammo', String(game.player.ghostAmmo));
             }
 
             const fill = $('hud-progress-fill');
@@ -475,6 +508,18 @@ window.PWONYX = window.PWONYX || {};
                 $('hud-telemetry').classList.toggle('hidden');
             }
             if (e.code === 'Enter' && game.state === 'menu' && !game.mode.isTwoPlayer) startMatch();
+        });
+
+        // Auto-pause game & suspend Web Audio when user switches browser tabs so music & drops stay synced
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                if (game && game.state === 'playing') {
+                    game.togglePause();
+                }
+                Audio.suspendForBackground();
+            } else {
+                Audio.resumeFromBackground();
+            }
         });
 
         requestAnimationFrame(updateHUDLoop);

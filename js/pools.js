@@ -6,7 +6,6 @@ window.PWONYX = window.PWONYX || {};
 
 (function () {
     const CFG = window.PWONYX.CONFIG;
-    const TRAIL_LENGTH = 14;
 
     class BallPool {
         constructor(size) {
@@ -22,7 +21,6 @@ window.PWONYX = window.PWONYX || {};
                     spin: 0, // Magnus curve effect
                     radius: CFG.BALL_RADIUS,
                     color: '#00f5d4',
-                    lastHitBy: 'none',
                     isCurvedShot: false,
                     // Previous-frame position: the trail is drawn as a segment px,py -> x,y
                     px: 0,
@@ -45,7 +43,6 @@ window.PWONYX = window.PWONYX || {};
                     b.spin = 0;
                     b.radius = CFG.BALL_RADIUS;
                     b.color = color || '#00f5d4';
-                    b.lastHitBy = 'none';
                     b.isCurvedShot = false;
                     return b;
                 }
@@ -294,7 +291,6 @@ window.PWONYX = window.PWONYX || {};
         ParticlePool,
         GhostPaddlePool,
         PowerUpPool,
-        FloatingTextPool,
-        TRAIL_LENGTH
+        FloatingTextPool
     };
 })();

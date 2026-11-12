@@ -182,7 +182,7 @@ window.PWONYX.CONFIG = {
         {
             id: 'powerupDuration',
             name: 'Maestria de Bônus & Munição',
-            desc: 'Aumenta a duração dos Power-Ups, frequência de queda e munição inicial do Ghost Paddle.',
+            desc: 'Aumenta a duração dos Power-Ups, frequência de queda e capacidade máxima de munição do Ghost Paddle.',
             icon: '⚡',
             maxLevel: 8,
             baseCost: 140,

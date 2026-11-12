@@ -13,6 +13,70 @@ window.PWONYX = window.PWONYX || {};
 
 (function () {
     const STEM_KEYS = ['drums', 'bass', 'arp', 'lead'];
+    const STEM_DB_NAME = 'pwonyx_stems_v1';
+    const STEM_STORE = 'stems';
+
+    function openStemDB() {
+        return new Promise((resolve, reject) => {
+            if (typeof window.indexedDB === 'undefined') {
+                reject(new Error('IndexedDB unavailable'));
+                return;
+            }
+            const req = window.indexedDB.open(STEM_DB_NAME, 1);
+            req.onupgradeneeded = () => {
+                const db = req.result;
+                if (!db.objectStoreNames.contains(STEM_STORE)) {
+                    db.createObjectStore(STEM_STORE, { keyPath: 'key' });
+                }
+            };
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => reject(req.error);
+        });
+    }
+
+    async function saveStemToDB(key, name, arrayBuffer) {
+        try {
+            const db = await openStemDB();
+            await new Promise((resolve, reject) => {
+                const tx = db.transaction(STEM_STORE, 'readwrite');
+                tx.objectStore(STEM_STORE).put({ key, name, buffer: arrayBuffer });
+                tx.oncomplete = () => resolve();
+                tx.onerror = () => reject(tx.error);
+            });
+            db.close();
+        } catch (e) {
+            // Ignore IndexedDB quota/privacy mode errors
+        }
+    }
+
+    async function loadAllStemsFromDB() {
+        try {
+            const db = await openStemDB();
+            const records = await new Promise((resolve, reject) => {
+                const tx = db.transaction(STEM_STORE, 'readonly');
+                const req = tx.objectStore(STEM_STORE).getAll();
+                req.onsuccess = () => resolve(req.result || []);
+                req.onerror = () => reject(req.error);
+            });
+            db.close();
+            return records;
+        } catch (e) {
+            return [];
+        }
+    }
+
+    async function clearStemsFromDB() {
+        try {
+            const db = await openStemDB();
+            await new Promise((resolve, reject) => {
+                const tx = db.transaction(STEM_STORE, 'readwrite');
+                tx.objectStore(STEM_STORE).clear();
+                tx.oncomplete = () => resolve();
+                tx.onerror = () => reject(tx.error);
+            });
+            db.close();
+        } catch (e) {}
+    }
 
     // MIDI note helper
     function midiToFreq(m) {
@@ -239,7 +303,7 @@ window.PWONYX = window.PWONYX || {};
             this.sfxGain.connect(this.masterGain);
             this.masterGain.connect(this.ctx.destination);
 
-            // Pre-generate white noise buffer for snare/hi-hats/risers
+            // Pre-generate white noise buffer & shared drum filters for snare/hi-hats
             const bufSize = this.ctx.sampleRate * 0.35;
             this.noiseBuffer = this.ctx.createBuffer(1, bufSize, this.ctx.sampleRate);
             const data = this.noiseBuffer.getChannelData(0);
@@ -247,7 +311,60 @@ window.PWONYX = window.PWONYX || {};
                 data[i] = Math.random() * 2 - 1;
             }
 
+            this.snareFilter = this.ctx.createBiquadFilter();
+            this.snareFilter.type = 'highpass';
+            this.snareFilter.frequency.value = 750;
+            this.snareFilter.connect(this.stemGains.drums);
+
+            this.hatFilter = this.ctx.createBiquadFilter();
+            this.hatFilter.type = 'highpass';
+            this.hatFilter.frequency.value = 6500;
+            this.hatFilter.connect(this.stemGains.drums);
+
             this.isInitialized = true;
+        }
+
+        /**
+         * Schedule a one-shot oscillator envelope and auto-disconnect nodes on end.
+         */
+        scheduleOsc(type, startFreq, endFreq, startTime, dur, gainPeak, dest, detune = 0) {
+            const osc = this.ctx.createOscillator();
+            const g = this.ctx.createGain();
+            osc.type = type;
+            osc.frequency.setValueAtTime(startFreq, startTime);
+            if (endFreq !== null && endFreq !== startFreq) {
+                osc.frequency.exponentialRampToValueAtTime(Math.max(1, endFreq), startTime + dur);
+            }
+            if (detune) osc.detune.value = detune;
+
+            g.gain.setValueAtTime(gainPeak, startTime);
+            g.gain.exponentialRampToValueAtTime(0.001, startTime + dur);
+
+            osc.connect(g);
+            g.connect(dest);
+            osc.onended = () => {
+                try { osc.disconnect(); g.disconnect(); } catch (e) {}
+            };
+            osc.start(startTime);
+            osc.stop(startTime + dur + 0.015);
+            return osc;
+        }
+
+        scheduleNoiseHit(startTime, dur, gainPeak, filterDest) {
+            const noise = this.ctx.createBufferSource();
+            noise.buffer = this.noiseBuffer;
+
+            const g = this.ctx.createGain();
+            g.gain.setValueAtTime(gainPeak, startTime);
+            g.gain.exponentialRampToValueAtTime(0.001, startTime + dur);
+
+            noise.connect(g);
+            g.connect(filterDest);
+            noise.onended = () => {
+                try { noise.disconnect(); g.disconnect(); } catch (e) {}
+            };
+            noise.start(startTime);
+            noise.stop(startTime + dur + 0.015);
         }
 
         getActiveScale() {
@@ -417,13 +534,17 @@ window.PWONYX = window.PWONYX || {};
 
         /**
          * Decode a user-uploaded Suno Stem file (.mp3, .ogg, .wav) into an AudioBuffer
+         * and persist raw bytes in IndexedDB so stems survive page reloads.
          */
         async loadCustomStemFile(stemKey, file) {
             this.init();
             const arrayBuffer = await file.arrayBuffer();
+            const bufferCopy = arrayBuffer.slice(0);
             const audioBuffer = await this.ctx.decodeAudioData(arrayBuffer);
             this.customBuffers[stemKey] = audioBuffer;
             this.customFileNames[stemKey] = file.name;
+
+            saveStemToDB(stemKey, file.name, bufferCopy);
 
             // Automatically switch to Suno mode and re-sync all stems sample-accurately
             this.currentTrack = 'suno';
@@ -436,6 +557,42 @@ window.PWONYX = window.PWONYX || {};
                 channels: audioBuffer.numberOfChannels,
                 name: file.name
             };
+        }
+
+        async restoreSavedStems() {
+            const records = await loadAllStemsFromDB();
+            if (!records.length) return {};
+            const restored = {};
+            // Decode lazily using a temporary OfflineAudioContext or AudioContext if available
+            const AudioCtx = window.AudioContext || window.webkitAudioContext;
+            if (!AudioCtx) return {};
+            const decoderCtx = this.ctx || new AudioCtx();
+            for (const rec of records) {
+                if (!STEM_KEYS.includes(rec.key) || !rec.buffer) continue;
+                try {
+                    const copy = rec.buffer.slice(0);
+                    const audioBuffer = await decoderCtx.decodeAudioData(copy);
+                    this.customBuffers[rec.key] = audioBuffer;
+                    this.customFileNames[rec.key] = rec.name;
+                    restored[rec.key] = { name: rec.name, duration: audioBuffer.duration };
+                } catch (e) {}
+            }
+            if (!this.ctx && decoderCtx.close) {
+                decoderCtx.close().catch(() => {});
+            }
+            return restored;
+        }
+
+        async clearCustomStems() {
+            STEM_KEYS.forEach((k) => {
+                this.customBuffers[k] = null;
+                this.customFileNames[k] = null;
+            });
+            this.stopCustomStemSources();
+            await clearStemsFromDB();
+            if (this.currentTrack === 'suno') {
+                this.setTrack('chaoz');
+            }
         }
 
         /**
@@ -519,24 +676,47 @@ window.PWONYX = window.PWONYX || {};
             }
         }
 
-        toggleMute() {
-            this.init();
-            this.isMuted = !this.isMuted;
-            const now = this.ctx.currentTime;
-            this.masterGain.gain.setValueAtTime(this.isMuted ? 0 : 0.8, now);
+        applyMasterMuteState() {
+            if (this.masterGain && this.ctx) {
+                this.masterGain.gain.setValueAtTime(this.isMuted ? 0 : 0.8, this.ctx.currentTime);
+            }
             if (this.chaozMediaEl) {
                 this.chaozMediaEl.volume = this.isMuted ? 0 : 0.78;
             }
+        }
+
+        toggleMute() {
+            this.init();
+            this.isMuted = !this.isMuted;
+            this.applyMasterMuteState();
             return this.isMuted;
         }
 
         setMuted(muted) {
             this.init();
             this.isMuted = !!muted;
-            const now = this.ctx.currentTime;
-            this.masterGain.gain.setValueAtTime(this.isMuted ? 0 : 0.8, now);
-            if (this.chaozMediaEl) {
-                this.chaozMediaEl.volume = this.isMuted ? 0 : 0.78;
+            this.applyMasterMuteState();
+        }
+
+        suspendForBackground() {
+            if (!this.isInitialized) return;
+            if (this.ctx && this.ctx.state === 'running') {
+                this.ctx.suspend().catch(() => {});
+            }
+            if (this.chaozMediaEl && !this.chaozMediaEl.paused) {
+                this._mediaWasPlayingBeforeHide = true;
+                this.chaozMediaEl.pause();
+            }
+        }
+
+        resumeFromBackground() {
+            if (!this.isInitialized) return;
+            if (this.ctx && this.ctx.state === 'suspended') {
+                this.ctx.resume().catch(() => {});
+            }
+            if (this.chaozMediaEl && this._mediaWasPlayingBeforeHide && this.isPlaying && this.currentTrack === 'chaoz') {
+                this._mediaWasPlayingBeforeHide = false;
+                this.chaozMediaEl.play().catch(() => {});
             }
         }
 
@@ -673,62 +853,23 @@ window.PWONYX = window.PWONYX || {};
 
             osc.connect(g);
             g.connect(this.stemGains.arp);
+            osc.onended = () => {
+                try { osc.disconnect(); g.disconnect(); } catch (e) {}
+            };
             osc.start(time);
             osc.stop(time + dur + 0.02);
         }
 
         synthKick(time) {
-            const osc = this.ctx.createOscillator();
-            const g = this.ctx.createGain();
-            osc.type = 'sine';
-            osc.frequency.setValueAtTime(145, time);
-            osc.frequency.exponentialRampToValueAtTime(38, time + 0.13);
-
-            g.gain.setValueAtTime(0.85, time);
-            g.gain.exponentialRampToValueAtTime(0.001, time + 0.2);
-
-            osc.connect(g);
-            g.connect(this.stemGains.drums);
-            osc.start(time);
-            osc.stop(time + 0.21);
+            this.scheduleOsc('sine', 145, 38, time, 0.2, 0.85, this.stemGains.drums);
         }
 
         synthSnare(time, gainVal = 0.32) {
-            const noise = this.ctx.createBufferSource();
-            noise.buffer = this.noiseBuffer;
-
-            const filter = this.ctx.createBiquadFilter();
-            filter.type = 'highpass';
-            filter.frequency.setValueAtTime(750, time);
-
-            const g = this.ctx.createGain();
-            g.gain.setValueAtTime(gainVal, time);
-            g.gain.exponentialRampToValueAtTime(0.001, time + 0.14);
-
-            noise.connect(filter);
-            filter.connect(g);
-            g.connect(this.stemGains.drums);
-            noise.start(time);
-            noise.stop(time + 0.15);
+            this.scheduleNoiseHit(time, 0.14, gainVal, this.snareFilter);
         }
 
         synthHiHat(time, dur) {
-            const noise = this.ctx.createBufferSource();
-            noise.buffer = this.noiseBuffer;
-
-            const filter = this.ctx.createBiquadFilter();
-            filter.type = 'highpass';
-            filter.frequency.setValueAtTime(6500, time);
-
-            const g = this.ctx.createGain();
-            g.gain.setValueAtTime(0.14, time);
-            g.gain.exponentialRampToValueAtTime(0.001, time + dur);
-
-            noise.connect(filter);
-            filter.connect(g);
-            g.connect(this.stemGains.drums);
-            noise.start(time);
-            noise.stop(time + dur + 0.01);
+            this.scheduleNoiseHit(time, dur, 0.14, this.hatFilter);
         }
 
         synthBass(time, freq, dur, vol) {
@@ -750,24 +891,15 @@ window.PWONYX = window.PWONYX || {};
             osc.connect(filt);
             filt.connect(g);
             g.connect(this.stemGains.bass);
+            osc.onended = () => {
+                try { osc.disconnect(); filt.disconnect(); g.disconnect(); } catch (e) {}
+            };
             osc.start(time);
             osc.stop(time + dur + 0.01);
         }
 
         synthArp(time, freq, dur) {
-            const osc = this.ctx.createOscillator();
-            const g = this.ctx.createGain();
-
-            osc.type = 'square';
-            osc.frequency.setValueAtTime(freq, time);
-
-            g.gain.setValueAtTime(0.13, time);
-            g.gain.exponentialRampToValueAtTime(0.001, time + dur);
-
-            osc.connect(g);
-            g.connect(this.stemGains.arp);
-            osc.start(time);
-            osc.stop(time + dur + 0.01);
+            this.scheduleOsc('square', freq, freq, time, dur, 0.13, this.stemGains.arp);
         }
 
         synthLead(time, freq, dur) {
@@ -797,6 +929,9 @@ window.PWONYX = window.PWONYX || {};
             filt.connect(g);
             g.connect(this.stemGains.lead);
 
+            osc1.onended = () => {
+                try { osc1.disconnect(); osc2.disconnect(); filt.disconnect(); g.disconnect(); } catch (e) {}
+            };
             osc1.start(time);
             osc2.start(time);
             osc1.stop(time + dur + 0.01);
@@ -817,81 +952,46 @@ window.PWONYX = window.PWONYX || {};
 
             const rootMidi = scale[idx] - 12; // Mid-range punch
             const targetMidi = isCurve ? scale[Math.min(scale.length - 1, idx + 4)] : scale[idx];
-            const baseFreq = midiToFreq(rootMidi);
-            const topFreq = midiToFreq(targetMidi);
-
-            const osc = this.ctx.createOscillator();
-            const g = this.ctx.createGain();
-            osc.type = isCurve ? 'sawtooth' : 'triangle';
-            osc.frequency.setValueAtTime(baseFreq, now);
-            osc.frequency.exponentialRampToValueAtTime(topFreq, now + 0.075);
-
-            g.gain.setValueAtTime(isRhythmHit ? 0.24 : 0.17, now);
-            g.gain.exponentialRampToValueAtTime(0.001, now + 0.085);
-
-            osc.connect(g);
-            g.connect(this.sfxGain);
-            osc.start(now);
-            osc.stop(now + 0.09);
+            this.scheduleOsc(
+                isCurve ? 'sawtooth' : 'triangle',
+                midiToFreq(rootMidi),
+                midiToFreq(targetMidi),
+                now,
+                0.08,
+                isRhythmHit ? 0.24 : 0.17,
+                this.sfxGain
+            );
 
             // If the player hit on the beat, play a shimmering harmonic chord chime!
             if (isRhythmHit) {
-                const chime = this.ctx.createOscillator();
-                const cg = this.ctx.createGain();
-                chime.type = 'sine';
                 const fifthMidi = scale[(idx + 4) % scale.length];
-                chime.frequency.setValueAtTime(midiToFreq(fifthMidi), now);
+                const chime = this.scheduleOsc('sine', midiToFreq(fifthMidi), null, now, 0.16, 0.16, this.sfxGain);
                 chime.frequency.setValueAtTime(midiToFreq(fifthMidi + 12), now + 0.045);
-                cg.gain.setValueAtTime(0.16, now);
-                cg.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
-                chime.connect(cg);
-                cg.connect(this.sfxGain);
-                chime.start(now);
-                chime.stop(now + 0.17);
             }
         }
 
         playGhostLaunch(isRhythmHit = false) {
             if (!this.isInitialized || this.isMuted) return;
-            const now = this.ctx.currentTime;
             const scale = this.getActiveScale();
-            const rootFreq = midiToFreq(scale[0] - 12);
-            const octFreq = midiToFreq(scale[0] + (isRhythmHit ? 12 : 7));
-
-            const osc = this.ctx.createOscillator();
-            const g = this.ctx.createGain();
-            osc.type = 'sine';
-            osc.frequency.setValueAtTime(rootFreq, now);
-            osc.frequency.exponentialRampToValueAtTime(octFreq, now + 0.16);
-
-            g.gain.setValueAtTime(0.24, now);
-            g.gain.exponentialRampToValueAtTime(0.001, now + 0.17);
-
-            osc.connect(g);
-            g.connect(this.sfxGain);
-            osc.start(now);
-            osc.stop(now + 0.18);
+            this.scheduleOsc(
+                'sine',
+                midiToFreq(scale[0] - 12),
+                midiToFreq(scale[0] + (isRhythmHit ? 12 : 7)),
+                this.ctx.currentTime,
+                0.165,
+                0.24,
+                this.sfxGain
+            );
         }
 
         playPowerUp() {
             if (!this.isInitialized || this.isMuted) return;
             const now = this.ctx.currentTime;
             const scale = this.getActiveScale();
-            // Arpeggiate 4 notes from the active musical scale
             const indices = [0, 2, 4, 7];
             indices.forEach((sIdx, i) => {
-                const midi = scale[sIdx % scale.length];
-                const f = midiToFreq(midi);
-                const osc = this.ctx.createOscillator();
-                const g = this.ctx.createGain();
-                osc.type = 'triangle';
-                osc.frequency.setValueAtTime(f, now + i * 0.045);
-                g.gain.setValueAtTime(0.18, now + i * 0.045);
-                g.gain.exponentialRampToValueAtTime(0.001, now + i * 0.045 + 0.11);
-                osc.connect(g);
-                g.connect(this.sfxGain);
-                osc.start(now + i * 0.045);
-                osc.stop(now + i * 0.045 + 0.12);
+                const f = midiToFreq(scale[sIdx % scale.length]);
+                this.scheduleOsc('triangle', f, f, now + i * 0.045, 0.11, 0.18, this.sfxGain);
             });
         }
 
@@ -899,47 +999,24 @@ window.PWONYX = window.PWONYX || {};
             if (!this.isInitialized || this.isMuted) return;
             const now = this.ctx.currentTime;
             const scale = this.getActiveScale();
-            const fifthFreq = midiToFreq(scale[4]);
-            const octFreq = midiToFreq(scale[7]);
-
-            const osc = this.ctx.createOscillator();
-            const g = this.ctx.createGain();
-            osc.type = 'sine';
-            osc.frequency.setValueAtTime(fifthFreq, now);
-            osc.frequency.setValueAtTime(octFreq, now + 0.06);
-
-            g.gain.setValueAtTime(0.22, now);
-            g.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
-
-            osc.connect(g);
-            g.connect(this.sfxGain);
-            osc.start(now);
-            osc.stop(now + 0.19);
+            const osc = this.scheduleOsc('sine', midiToFreq(scale[4]), null, now, 0.18, 0.22, this.sfxGain);
+            osc.frequency.setValueAtTime(midiToFreq(scale[7]), now + 0.06);
         }
 
         playBarrageLaunch(index = 0, total = 10) {
             if (!this.isInitialized || this.isMuted) return;
-            const now = this.ctx.currentTime;
             const scale = this.getActiveScale();
-            const osc = this.ctx.createOscillator();
-            const g = this.ctx.createGain();
-
-            osc.type = 'sawtooth';
             const step = Math.min(scale.length - 1, Math.max(0, index % scale.length));
             const octaveBoost = index >= scale.length ? 12 : 0;
-            const baseFreq = midiToFreq(scale[step] - 12 + octaveBoost);
-            const targetFreq = midiToFreq(scale[step] + octaveBoost);
-
-            osc.frequency.setValueAtTime(baseFreq, now);
-            osc.frequency.exponentialRampToValueAtTime(targetFreq, now + 0.08);
-
-            g.gain.setValueAtTime(0.20, now);
-            g.gain.exponentialRampToValueAtTime(0.001, now + 0.085);
-
-            osc.connect(g);
-            g.connect(this.sfxGain);
-            osc.start(now);
-            osc.stop(now + 0.09);
+            this.scheduleOsc(
+                'sawtooth',
+                midiToFreq(scale[step] - 12 + octaveBoost),
+                midiToFreq(scale[step] + octaveBoost),
+                this.ctx.currentTime,
+                0.085,
+                0.20,
+                this.sfxGain
+            );
         }
 
         /**
@@ -974,20 +1051,13 @@ window.PWONYX = window.PWONYX || {};
 
         playMissPenalty() {
             if (!this.isInitialized || this.isMuted) return;
-            const now = this.ctx.currentTime;
-            const osc = this.ctx.createOscillator();
-            const g = this.ctx.createGain();
-            osc.type = 'sawtooth';
-            osc.frequency.setValueAtTime(160, now);
-            osc.frequency.exponentialRampToValueAtTime(55, now + 0.18);
+            this.scheduleOsc('sawtooth', 160, 55, this.ctx.currentTime, 0.185, 0.22, this.sfxGain);
+        }
 
-            g.gain.setValueAtTime(0.22, now);
-            g.gain.exponentialRampToValueAtTime(0.001, now + 0.19);
-
-            osc.connect(g);
-            g.connect(this.sfxGain);
-            osc.start(now);
-            osc.stop(now + 0.2);
+        sumFreqBand(startBin, endBin) {
+            let sum = 0;
+            for (let i = startBin; i <= endBin; i++) sum += this.freqData[i];
+            return sum / ((endBin - startBin + 1) * 255);
         }
 
         /**
@@ -1006,25 +1076,10 @@ window.PWONYX = window.PWONYX || {};
             this.analyser.getByteFrequencyData(this.freqData);
 
             // With fftSize = 1024 (48kHz -> 46.875 Hz/bin):
-            // Sub-bass & Kick fundamental: bins 1..3 (~47 Hz - 140 Hz)
-            let subSum = 0;
-            for (let i = 1; i <= 3; i++) subSum += this.freqData[i];
-            this.subBassEnergy = subSum / (3 * 255);
-
-            // Full Bass: bins 1..6 (~47 Hz - 280 Hz)
-            let bassSum = 0;
-            for (let i = 1; i <= 6; i++) bassSum += this.freqData[i];
-            this.bassEnergy = bassSum / (6 * 255);
-
-            // Mids (Synths, Snare body, Leads): bins 7..36 (~320 Hz - 1.7 kHz)
-            let midSum = 0;
-            for (let i = 7; i <= 36; i++) midSum += this.freqData[i];
-            this.midEnergy = midSum / (30 * 255);
-
-            // Highs (Hi-hats, Air, Risers): bins 37..128 (~1.7 kHz - 6.0 kHz)
-            let highSum = 0;
-            for (let i = 37; i <= 128; i++) highSum += this.freqData[i];
-            this.highEnergy = highSum / (92 * 255);
+            this.subBassEnergy = this.sumFreqBand(1, 3);   // ~47 Hz - 140 Hz (Kick)
+            this.bassEnergy = this.sumFreqBand(1, 6);      // ~47 Hz - 280 Hz (Bass)
+            this.midEnergy = this.sumFreqBand(7, 36);      // ~320 Hz - 1.7 kHz (Synths/Snare)
+            this.highEnergy = this.sumFreqBand(37, 128);   // ~1.7 kHz - 6.0 kHz (Hi-hats/Risers)
 
             this.totalEnergy = this.bassEnergy * 0.45 + this.midEnergy * 0.35 + this.highEnergy * 0.20;
 

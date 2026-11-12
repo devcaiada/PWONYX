@@ -324,15 +324,6 @@ button { font: inherit; color: inherit; background: none; border: none; cursor: 
     transform: rotate(45deg) scale(1.06);
 }
 
-.logo {
-    font-family: 'Orbitron', sans-serif;
-    font-weight: 900;
-    font-size: clamp(42px, 8vw, 96px);
-    letter-spacing: 0.12em;
-    color: #fff;
-    text-shadow: 0 0 18px var(--cyan), 0 0 42px rgba(0, 245, 212, 0.5);
-}
-
 .title {
     font-family: 'Orbitron', sans-serif;
     font-weight: 900;
@@ -401,14 +392,6 @@ button { font: inherit; color: inherit; background: none; border: none; cursor: 
 .link:hover { opacity: 1; color: var(--cyan); }
 
 .credits { color: var(--yellow); font-family: 'Orbitron', sans-serif; font-size: 13px; }
-
-.hint {
-    position: absolute;
-    bottom: 16px;
-    font-size: 12px;
-    color: var(--muted);
-    opacity: 0.8;
-}
 
 .results {
     display: grid;
