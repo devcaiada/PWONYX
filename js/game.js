@@ -61,7 +61,7 @@ window.PWONYX = window.PWONYX || {};
             }
             window.addEventListener('resize', () => this.resize());
 
-            // Parallax layers & Transition state (Creo - Flow Minimalist Organic Sci-Fi)
+            // Parallax layers & Transition state (Minimalist Organic Sci-Fi)
             this.parallax = {
                 camX: 0,
                 camY: 0,
@@ -71,22 +71,56 @@ window.PWONYX = window.PWONYX || {};
                 mouseOffsetY: 0,
                 bgX: 0,
                 bgY: 0,
+                veilX: 0,
+                veilY: 0,
                 coreX: 0,
                 coreY: 0,
                 fgX: 0,
                 fgY: 0,
-                rot3D: 0
+                rot3D: 0,
+                tiltY: 0,
+                lastWakeX: -9999,
+                lastWakeY: -9999
             };
             this.menuTime = 0;
+            this.menuIntroTimer = 0;
             this.flowClickPulse = 0;
+            this.menuPlayHover = 0;
+            this.targetMenuPlayHover = false;
+            this.menuAmbientRippleTimer = 2.4;
             this.transitionProgress = 0;
             this.transitionTimer = 0;
-            this.transitionDuration = 0.95;
+            this.transitionDuration = 0.78;
             this.pendingModeId = null;
             this.flowParticles = [];
+            this.menuRipples = Array.from({ length: 12 }, () => ({
+                active: false, x: 0, y: 0, radius: 0, maxRadius: 200,
+                life: 0, maxLife: 1, color: '#00f5d4', isCoreAnchored: false
+            }));
+            this.menuCursorWake = Array.from({ length: 48 }, () => ({
+                active: false, x: 0, y: 0, vx: 0, vy: 0,
+                size: 2, life: 0, maxLife: 1, phase: 0
+            }));
+            this.menuOrbitNodes = [
+                { tilt: -0.42, rxMul: 1.48, ryMul: 0.42, speed: 0.58, theta: 0.65, color: '#00f5d4', radius: 3.1 },
+                { tilt: 0.32, rxMul: 1.76, ryMul: 0.52, speed: -0.38, theta: 3.5, color: '#a6e8ff', radius: 2.5 }
+            ];
             this.initFlowParticles();
 
-            // Parallax image asset
+            // Menu & Parallax image assets (Nano Banana layered plates)
+            const loadImg = (src) => {
+                const entry = { img: new Image(), loaded: false };
+                entry.img.onload = () => { entry.loaded = true; };
+                entry.img.src = src;
+                return entry;
+            };
+            this.menuAssets = {
+                bg: loadImg('assets/images/menu_bg_deep.jpg'),
+                veil: loadImg('assets/images/menu_flow_veil.webp'),
+                core: loadImg('assets/images/menu_hero_core.webp')
+            };
+
+            // Gameplay widescreen cosmic nebula asset
             this.parallaxBgImg = new Image();
             this.parallaxBgImg.src = 'assets/images/parallax_bg.jpg';
             this.parallaxBgLoaded = false;
@@ -314,6 +348,57 @@ window.PWONYX = window.PWONYX || {};
             }
         }
 
+        setMenuPlayHover(hovered) {
+            this.targetMenuPlayHover = !!hovered;
+        }
+
+        resetMenuIntro() {
+            this.menuIntroTimer = 0;
+            this.transitionProgress = 0;
+            this.transitionTimer = 0;
+            this.flowClickPulse = 0;
+            this.targetMenuPlayHover = false;
+            this.menuPlayHover = 0;
+        }
+
+        spawnMenuRipple(x, y, maxRadius = 220, color = '#00f5d4', maxLife = 1.15, isCoreAnchored = false) {
+            if (!this.menuRipples) return;
+            for (let i = 0; i < this.menuRipples.length; i++) {
+                const r = this.menuRipples[i];
+                if (!r.active) {
+                    r.active = true;
+                    r.x = x;
+                    r.y = y;
+                    r.radius = isCoreAnchored ? 24 : 6;
+                    r.maxRadius = maxRadius;
+                    r.life = maxLife;
+                    r.maxLife = maxLife;
+                    r.color = color;
+                    r.isCoreAnchored = isCoreAnchored;
+                    return;
+                }
+            }
+        }
+
+        spawnCursorWakeMote(x, y) {
+            if (!this.menuCursorWake) return;
+            for (let i = 0; i < this.menuCursorWake.length; i++) {
+                const m = this.menuCursorWake[i];
+                if (!m.active) {
+                    m.active = true;
+                    m.x = x + (Math.random() - 0.5) * 10;
+                    m.y = y + (Math.random() - 0.5) * 10;
+                    m.vx = (Math.random() - 0.5) * 18;
+                    m.vy = -10 - Math.random() * 20;
+                    m.size = 1.4 + Math.random() * 2.1;
+                    m.maxLife = 0.75 + Math.random() * 0.55;
+                    m.life = m.maxLife;
+                    m.phase = Math.random() * Math.PI * 2;
+                    return;
+                }
+            }
+        }
+
         bindInputs() {
             const updateMousePos = (clientX, clientY) => {
                 const rect = this.canvas.getBoundingClientRect();
@@ -330,6 +415,16 @@ window.PWONYX = window.PWONYX || {};
                 this.parallax.targetCamY = normY;
                 this.parallax.mouseOffsetX = normX * (this.viewWidth * 0.5);
                 this.parallax.mouseOffsetY = normY * (this.viewHeight * 0.5);
+
+                if (this.state === 'menu') {
+                    const dx = this.input.mouseX - this.parallax.lastWakeX;
+                    const dy = this.input.mouseY - this.parallax.lastWakeY;
+                    if (dx * dx + dy * dy >= 324) { // every ~18px
+                        this.parallax.lastWakeX = this.input.mouseX;
+                        this.parallax.lastWakeY = this.input.mouseY;
+                        this.spawnCursorWakeMote(this.input.mouseX, this.input.mouseY);
+                    }
+                }
             };
 
             this.canvas.addEventListener('mousemove', (e) => {
@@ -341,8 +436,13 @@ window.PWONYX = window.PWONYX || {};
                     Audio.startMusic();
                     Audio.setLowPassEffect('normal');
                     Audio.updateAdaptiveLayers(4);
+                    if (this.callbacks.onMenuAudioStarted) {
+                        this.callbacks.onMenuAudioStarted();
+                    }
                 }
                 this.flowClickPulse = 1.0;
+                this.spawnMenuRipple(this.input.mouseX, this.input.mouseY, 130, '#9ee6ff', 0.85, false);
+                this.spawnMenuRipple(0, 0, Math.min(this.viewWidth, this.viewHeight) * 0.36, '#00f5d4', 1.15, true);
             };
 
             this.canvas.addEventListener('mousedown', (e) => {
@@ -459,15 +559,17 @@ window.PWONYX = window.PWONYX || {};
             if (this.state !== 'menu') return;
             this.state = 'transitioning';
             this.transitionTimer = 0;
-            this.transitionDuration = 0.55;
+            this.transitionDuration = 0.78;
             this.transitionProgress = 0;
             this.pendingModeId = modeId || this.mode.id;
             this.screenShake = 0;
+            this.targetMenuPlayHover = false;
 
             // Audio: Start music and normal filter cleanly without jarring explosion SFX
             Audio.startMusic();
             Audio.setLowPassEffect('normal');
             Audio.playPowerUp();
+            this.spawnMenuRipple(0, 0, Math.min(this.viewWidth, this.viewHeight) * 0.42, '#00f5d4', 0.75, true);
 
             if (this.callbacks.onTransitionStart) {
                 this.callbacks.onTransitionStart();
@@ -477,6 +579,8 @@ window.PWONYX = window.PWONYX || {};
         startMatch(modeId) {
             this.mode = CFG.MODES[modeId] || CFG.MODES.medium;
             this.state = 'playing';
+            this.transitionProgress = 0;
+            this.transitionTimer = 0;
 
             this.balls.clear();
             this.particles.clear();
@@ -787,46 +891,112 @@ window.PWONYX = window.PWONYX || {};
             }
         }
 
+        updateMenuEffects(dt, kickEnergy, speedBoost = 1) {
+            if (this.menuOrbitNodes) {
+                const orbitRate = speedBoost * (1 + this.menuPlayHover * 0.85 + kickEnergy * 0.45);
+                for (let i = 0; i < this.menuOrbitNodes.length; i++) {
+                    this.menuOrbitNodes[i].theta += this.menuOrbitNodes[i].speed * orbitRate * dt;
+                }
+            }
+
+            if (this.menuRipples) {
+                for (let i = 0; i < this.menuRipples.length; i++) {
+                    const r = this.menuRipples[i];
+                    if (!r.active) continue;
+                    r.life -= dt;
+                    if (r.life <= 0) {
+                        r.active = false;
+                        continue;
+                    }
+                    const p = 1 - r.life / r.maxLife;
+                    const ease = 1 - Math.pow(1 - p, 3);
+                    r.radius = 18 + ease * r.maxRadius;
+                }
+            }
+
+            if (this.menuCursorWake) {
+                for (let i = 0; i < this.menuCursorWake.length; i++) {
+                    const m = this.menuCursorWake[i];
+                    if (!m.active) continue;
+                    m.life -= dt;
+                    if (m.life <= 0) {
+                        m.active = false;
+                        continue;
+                    }
+                    m.x += (m.vx + Math.sin(this.menuTime * 3 + m.phase) * 10) * dt;
+                    m.y += m.vy * dt;
+                }
+            }
+        }
+
         updateMenuParallax(dt) {
             this.menuTime += dt;
+            this.menuIntroTimer = Math.min(2.0, this.menuIntroTimer + dt);
             if (this.flowClickPulse > 0) {
                 this.flowClickPulse = Math.max(0, this.flowClickPulse - dt * 2.2);
             }
 
-            // Smooth lerp parallax across the 3 depth layers:
-            // Layer 0 (Background particles & rays): factor 0.02
-            const targetBgX = this.parallax.mouseOffsetX * 0.02;
-            const targetBgY = this.parallax.mouseOffsetY * 0.02;
-            this.parallax.bgX += (targetBgX - this.parallax.bgX) * 0.08;
-            this.parallax.bgY += (targetBgY - this.parallax.bgY) * 0.08;
+            const hoverTarget = this.targetMenuPlayHover ? 1 : 0;
+            this.menuPlayHover += (hoverTarget - this.menuPlayHover) * (1 - Math.exp(-8.5 * dt));
 
-            // Layer 1 (Central emissive core + wavy trail & subtle 3D rotation): factor 0.05
-            const targetCoreX = this.parallax.mouseOffsetX * 0.05;
-            const targetCoreY = this.parallax.mouseOffsetY * 0.05;
-            this.parallax.coreX += (targetCoreX - this.parallax.coreX) * 0.08;
-            this.parallax.coreY += (targetCoreY - this.parallax.coreY) * 0.08;
-            const targetRot = (this.parallax.mouseOffsetX / Math.max(1, this.viewWidth * 0.5)) * 0.14;
-            this.parallax.rot3D += (targetRot - this.parallax.rot3D) * 0.05;
+            // Hybrid camera: subtle ambient figure-8 breath blended with mouse coordinates
+            const idleNormX = Math.sin(this.menuTime * 0.42) * 0.16;
+            const idleNormY = Math.cos(this.menuTime * 0.31) * 0.12;
+            const camNormX = Math.max(-1.1, Math.min(1.1, this.parallax.targetCamX + idleNormX));
+            const camNormY = Math.max(-1.1, Math.min(1.1, this.parallax.targetCamY + idleNormY));
+            const offX = camNormX * (this.viewWidth * 0.5);
+            const offY = camNormY * (this.viewHeight * 0.5);
 
-            // Layer 2 (Foreground bokeh & silhouette dust): factor 0.08
-            const targetFgX = this.parallax.mouseOffsetX * 0.08;
-            const targetFgY = this.parallax.mouseOffsetY * 0.08;
-            this.parallax.fgX += (targetFgX - this.parallax.fgX) * 0.08;
-            this.parallax.fgY += (targetFgY - this.parallax.fgY) * 0.08;
+            const damp = 1 - Math.exp(-6.2 * dt);
+            const dampTilt = 1 - Math.exp(-4.8 * dt);
 
-            // Legacy normalized camera for transition effects
-            this.parallax.camX += (this.parallax.targetCamX - this.parallax.camX) * dt * 4.2;
-            this.parallax.camY += (this.parallax.targetCamY - this.parallax.camY) * dt * 4.2;
+            // 5 distinct parallax planes (0.018 -> 0.048 -> 0.082 -> 0.135)
+            this.parallax.bgX += (offX * 0.018 - this.parallax.bgX) * damp;
+            this.parallax.bgY += (offY * 0.018 - this.parallax.bgY) * damp;
 
-            // Subtle parallax shift on the DOM title/play block (remains horizontally centered via margin-inline: auto)
+            this.parallax.veilX += (offX * 0.048 - this.parallax.veilX) * damp;
+            this.parallax.veilY += (offY * 0.048 - this.parallax.veilY) * damp;
+
+            this.parallax.coreX += (offX * 0.082 - this.parallax.coreX) * damp;
+            this.parallax.coreY += (offY * 0.082 - this.parallax.coreY) * damp;
+
+            this.parallax.fgX += (offX * 0.135 - this.parallax.fgX) * damp;
+            this.parallax.fgY += (offY * 0.135 - this.parallax.fgY) * damp;
+
+            this.parallax.rot3D += (camNormX * 0.16 - this.parallax.rot3D) * dampTilt;
+            this.parallax.tiltY += (camNormY * 0.10 - this.parallax.tiltY) * dampTilt;
+
+            this.parallax.camX += (camNormX - this.parallax.camX) * damp;
+            this.parallax.camY += (camNormY - this.parallax.camY) * damp;
+
+            // Subtle inverse parallax shift on DOM title/play block so it floats in front
             const menuCenter = document.getElementById('flow-menu-center');
             if (menuCenter && this.state === 'menu') {
-                const tx = (-this.parallax.coreX * 0.35).toFixed(2);
-                const ty = (-this.parallax.coreY * 0.35).toFixed(2);
-                menuCenter.style.transform = `translate3d(${tx}px, ${ty}px, 0)`;
+                const tx = (-this.parallax.coreX * 0.28).toFixed(2);
+                const ty = (-this.parallax.coreY * 0.28).toFixed(2);
+                menuCenter.style.setProperty('--menu-px', `${tx}px`);
+                menuCenter.style.setProperty('--menu-py', `${ty}px`);
             }
 
-            this.advanceFlowParticles(dt, 1);
+            // Periodic soft breathing pulse ripple from core
+            this.menuAmbientRippleTimer -= dt;
+            if (this.menuAmbientRippleTimer <= 0) {
+                this.menuAmbientRippleTimer = this.targetMenuPlayHover ? 2.1 : 4.1;
+                this.spawnMenuRipple(
+                    0, 0,
+                    Math.min(this.viewWidth, this.viewHeight) * 0.30,
+                    this.targetMenuPlayHover ? '#00f5d4' : '#7fd8ff',
+                    1.35,
+                    true
+                );
+            }
+
+            const bass = Audio.bassEnergy || 0;
+            const beat = Audio.beatPulse || 0;
+            const kickEnergy = Math.max(bass * 1.1, beat * 0.85) + (this.flowClickPulse || 0) * 0.45;
+            this.updateMenuEffects(dt, kickEnergy, 1);
+
+            this.advanceFlowParticles(dt, 1 + this.menuPlayHover * 0.45);
             this.updateParticles(dt);
         }
 
@@ -836,11 +1006,20 @@ window.PWONYX = window.PWONYX || {};
             this.transitionProgress = Math.min(1, this.transitionTimer / this.transitionDuration);
 
             // Smoothly return parallax offsets to 0 so the central core converges to exact arena center
-            this.parallax.coreX *= Math.pow(0.05, dt);
-            this.parallax.coreY *= Math.pow(0.05, dt);
-            this.parallax.rot3D *= Math.pow(0.05, dt);
+            const decay = Math.pow(0.03, dt);
+            this.parallax.bgX *= decay;
+            this.parallax.bgY *= decay;
+            this.parallax.veilX *= decay;
+            this.parallax.veilY *= decay;
+            this.parallax.coreX *= decay;
+            this.parallax.coreY *= decay;
+            this.parallax.fgX *= decay;
+            this.parallax.fgY *= decay;
+            this.parallax.rot3D *= decay;
+            this.parallax.tiltY *= decay;
 
-            this.advanceFlowParticles(dt, 1 + this.transitionProgress * 1.6);
+            this.updateMenuEffects(dt, 0.4, 1 + this.transitionProgress * 4.5);
+            this.advanceFlowParticles(dt, 1 + this.transitionProgress * 2.2);
             this.updateParticles(dt);
 
             if (this.transitionProgress >= 1) {
@@ -1646,24 +1825,6 @@ window.PWONYX = window.PWONYX || {};
             t.globalCompositeOperation = 'source-over';
         }
 
-        traceOrganicContour(ctx, cx, cy, rx, ry, phase, rotOffset, lobeAmp = 0.09) {
-            const steps = 64;
-            ctx.beginPath();
-            for (let s = 0; s <= steps; s++) {
-                const a = (s / steps) * Math.PI * 2;
-                const wave =
-                    1 +
-                    lobeAmp * Math.sin(a * 3 + phase) +
-                    (lobeAmp * 0.72) * Math.cos(a * 2 - phase * 0.7 + rotOffset) +
-                    (lobeAmp * 0.45) * Math.sin(a * 5 + phase * 1.3);
-                const px = cx + Math.cos(a) * rx * wave;
-                const py = cy + Math.sin(a) * ry * wave;
-                if (s === 0) ctx.moveTo(px, py);
-                else ctx.lineTo(px, py);
-            }
-            ctx.closePath();
-        }
-
         renderFlowParticleLayer(ctx, layerIndex, offsetX, offsetY, vw, vh, time, kickEnergy, fadeAlpha = 1) {
             if (!this.flowParticles || !this.flowSprites) return;
             ctx.save();
@@ -1693,11 +1854,355 @@ window.PWONYX = window.PWONYX || {};
                     const boost = layerIndex === 2 ? kickEnergy * 0.18 : 0;
                     const sprite = p.isBokeh ? this.flowSprites.bokeh : this.flowSprites.glow;
                     const size = r * 4.4;
+                    ctx.globalCompositeOperation = 'screen';
                     ctx.globalAlpha = Math.min(1, alpha + boost);
                     ctx.drawImage(sprite, px - size * 0.5, py - size * 0.5, size, size);
+                    ctx.globalCompositeOperation = 'source-over';
                 }
             }
             ctx.restore();
+        }
+
+        renderMenuBackdrop(ctx, vw, vh, bgX, bgY, rot3D, warpScale, kickEnergy, sceneFade) {
+            const bgAsset = this.menuAssets && this.menuAssets.bg;
+            if (bgAsset && bgAsset.loaded) {
+                const img = bgAsset.img;
+                const overscan = 1.12 * warpScale;
+                const imgAspect = img.naturalWidth / Math.max(1, img.naturalHeight);
+                const viewAspect = vw / Math.max(1, vh);
+                let drawW, drawH;
+                if (viewAspect >= imgAspect) {
+                    drawW = vw * overscan;
+                    drawH = drawW / imgAspect;
+                } else {
+                    drawH = vh * overscan;
+                    drawW = drawH * imgAspect;
+                }
+                const dx = (vw - drawW) * 0.5 - bgX * 1.15;
+                const dy = (vh - drawH) * 0.5 - bgY * 1.15;
+
+                ctx.save();
+                ctx.globalAlpha = sceneFade;
+                ctx.drawImage(img, dx, dy, drawW, drawH);
+
+                // Subtle audio/hover luminance boost in upper-right volumetric cone
+                const rayGlowAlpha = Math.min(0.28, (0.04 + kickEnergy * 0.12 + this.menuPlayHover * 0.08) * sceneFade);
+                if (rayGlowAlpha > 0.005) {
+                    ctx.globalCompositeOperation = 'screen';
+                    const rg = ctx.createRadialGradient(
+                        vw * 0.88 - bgX * 1.4, vh * 0.08 - bgY * 1.4, 10,
+                        vw * 0.72 - bgX, vh * 0.24 - bgY, Math.max(vw, vh) * 0.78
+                    );
+                    rg.addColorStop(0, `rgba(140, 228, 255, ${rayGlowAlpha})`);
+                    rg.addColorStop(0.5, `rgba(38, 128, 178, ${rayGlowAlpha * 0.4})`);
+                    rg.addColorStop(1, 'rgba(0, 0, 0, 0)');
+                    ctx.fillStyle = rg;
+                    ctx.fillRect(0, 0, vw, vh);
+                }
+                ctx.restore();
+                return;
+            }
+
+            // Fallback gradient while image loads
+            const bgGrad = ctx.createLinearGradient(vw * 0.12, vh * 0.95, vw * 0.92, vh * 0.04);
+            bgGrad.addColorStop(0, '#020509');
+            bgGrad.addColorStop(0.45, '#05121f');
+            bgGrad.addColorStop(1, '#143c59');
+            ctx.fillStyle = bgGrad;
+            ctx.fillRect(0, 0, vw, vh);
+        }
+
+        renderMenuVeil(ctx, vw, vh, veilX, veilY, rot3D, tiltY, warpScale, kickEnergy, veilIntro, sceneFade) {
+            const veilAsset = this.menuAssets && this.menuAssets.veil;
+            if (!veilAsset || !veilAsset.loaded) return;
+
+            const img = veilAsset.img;
+            const time = this.menuTime;
+            const breathe = 1 + Math.sin(time * 0.52) * 0.028 + kickEnergy * 0.02;
+            const imgAspect = img.naturalWidth / Math.max(1, img.naturalHeight);
+            const baseW = Math.max(vw * 1.12, vh * 1.82) * breathe * warpScale * (0.94 + veilIntro * 0.06);
+            const baseH = baseW / imgAspect;
+
+            const cx = vw * 0.50 - veilX + Math.sin(time * 0.36) * 14;
+            const cy = vh * 0.42 - veilY + Math.cos(time * 0.44) * 9;
+            const angle = rot3D * 0.14 + Math.sin(time * 0.32) * 0.024;
+            const alpha = Math.min(0.88, (0.58 + kickEnergy * 0.16 + this.menuPlayHover * 0.12) * veilIntro * sceneFade);
+
+            ctx.save();
+            ctx.globalCompositeOperation = 'screen';
+            ctx.translate(cx, cy);
+            ctx.rotate(angle);
+            ctx.scale(1, 1 - Math.abs(tiltY) * 0.18);
+            ctx.globalAlpha = alpha;
+            ctx.drawImage(img, -baseW * 0.5, -baseH * 0.5, baseW, baseH);
+
+            // Subtle chromatic resonance ghost on bass hit or hover
+            if (kickEnergy > 0.18 || this.menuPlayHover > 0.05) {
+                ctx.globalAlpha = Math.min(0.32, (kickEnergy * 0.16 + this.menuPlayHover * 0.1) * veilIntro * sceneFade);
+                ctx.drawImage(img, -baseW * 0.515, -baseH * 0.505, baseW * 1.03, baseH * 1.03);
+            }
+            ctx.restore();
+        }
+
+        renderMenuHarmonicCorona(ctx, cx, cy, coreRadius, time, kickEnergy, hoverBoost, fadeAlpha) {
+            const alpha = Math.min(0.65, (0.14 + kickEnergy * 0.28 + hoverBoost * 0.18) * fadeAlpha);
+            if (alpha <= 0.01) return;
+
+            const steps = 72;
+            const baseR = coreRadius * (1.16 + kickEnergy * 0.06);
+            const freqData = Audio.freqData;
+            const hasLiveSpectrum = Audio.isPlaying && freqData && freqData.length >= 64;
+
+            ctx.save();
+            ctx.globalCompositeOperation = 'screen';
+            ctx.translate(cx, cy);
+            ctx.beginPath();
+            for (let s = 0; s <= steps; s++) {
+                const a = (s / steps) * Math.PI * 2;
+                let specVal = 0;
+                if (hasLiveSpectrum) {
+                    // Mirror spectrum symmetrically around circle for seamless closure
+                    const idx = Math.abs((s % steps) - steps / 2) / (steps / 2);
+                    const bin = Math.min(96, Math.floor(2 + idx * 54));
+                    specVal = (freqData[bin] || 0) / 255;
+                }
+                const harmonic =
+                    Math.sin(a * 4 + time * 2.1) * (1.8 + kickEnergy * 4.5) +
+                    Math.cos(a * 6 - time * 1.6) * (1.1 + hoverBoost * 2.6) +
+                    specVal * (coreRadius * 0.12);
+                const r = baseR + harmonic;
+                const px = Math.cos(a) * r;
+                const py = Math.sin(a) * r;
+                if (s === 0) ctx.moveTo(px, py);
+                else ctx.lineTo(px, py);
+            }
+            ctx.closePath();
+            ctx.strokeStyle = hoverBoost > 0.25
+                ? `rgba(0, 245, 212, ${alpha})`
+                : `rgba(145, 226, 255, ${alpha})`;
+            ctx.lineWidth = 1.0 + kickEnergy * 0.8;
+            ctx.shadowColor = '#00f5d4';
+            ctx.shadowBlur = 10 + kickEnergy * 10;
+            ctx.stroke();
+            ctx.restore();
+        }
+
+        renderMenuOrbitalArcs(ctx, cx, cy, coreRadius, rot3D, tiltY, isFrontPass, ringScale, hoverBoost, fadeAlpha) {
+            if (!this.menuOrbitNodes || fadeAlpha <= 0.01) return;
+
+            ctx.save();
+            ctx.globalCompositeOperation = 'screen';
+            for (let i = 0; i < this.menuOrbitNodes.length; i++) {
+                const orb = this.menuOrbitNodes[i];
+                const rx = coreRadius * orb.rxMul * ringScale;
+                const ry = Math.max(coreRadius * 0.16, coreRadius * orb.ryMul * (1 + tiltY * 0.55) * ringScale);
+                const rot = orb.tilt + rot3D * (i === 0 ? 0.42 : -0.35);
+
+                ctx.save();
+                ctx.translate(cx, cy);
+                ctx.rotate(rot);
+
+                // Orbit hairline arc (split cleanly at sin(a) == 0 for front/back depth)
+                ctx.beginPath();
+                if (isFrontPass) {
+                    ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI);
+                    ctx.strokeStyle = i === 0
+                        ? `rgba(0, 245, 212, ${(0.28 + hoverBoost * 0.26) * fadeAlpha})`
+                        : `rgba(166, 232, 255, ${(0.20 + hoverBoost * 0.20) * fadeAlpha})`;
+                    ctx.lineWidth = 1.15 + hoverBoost * 0.45;
+                } else {
+                    ctx.ellipse(0, 0, rx, ry, 0, Math.PI, Math.PI * 2);
+                    ctx.strokeStyle = `rgba(120, 206, 245, ${(0.11 + hoverBoost * 0.10) * fadeAlpha})`;
+                    ctx.lineWidth = 0.85;
+                }
+                ctx.stroke();
+
+                // Orbiting luminous micro-sphere + delicate comet wake
+                const dir = orb.speed >= 0 ? 1 : -1;
+                const trailSegs = 12;
+                const trailSpan = 0.65;
+                for (let s = trailSegs; s >= 1; s--) {
+                    const frac = s / trailSegs;
+                    const a0 = orb.theta - dir * trailSpan * frac;
+                    const a1 = orb.theta - dir * trailSpan * (frac - 1 / trailSegs);
+                    const midSin = Math.sin((a0 + a1) * 0.5);
+                    if ((midSin >= 0) !== isFrontPass) continue;
+
+                    ctx.beginPath();
+                    ctx.moveTo(Math.cos(a0) * rx, Math.sin(a0) * ry);
+                    ctx.lineTo(Math.cos(a1) * rx, Math.sin(a1) * ry);
+                    ctx.strokeStyle = orb.color;
+                    ctx.globalAlpha = (1 - frac) * (isFrontPass ? 0.72 : 0.32) * fadeAlpha;
+                    ctx.lineWidth = (1 - frac * 0.65) * 2.2;
+                    ctx.stroke();
+                }
+
+                const nodeSin = Math.sin(orb.theta);
+                if ((nodeSin >= 0) === isFrontPass) {
+                    const nx = Math.cos(orb.theta) * rx;
+                    const ny = Math.sin(orb.theta) * ry;
+                    const nr = orb.radius * (isFrontPass ? 1.05 : 0.78) * (1 + hoverBoost * 0.25);
+
+                    ctx.globalAlpha = (isFrontPass ? 0.95 : 0.5) * fadeAlpha;
+                    ctx.shadowColor = orb.color;
+                    ctx.shadowBlur = isFrontPass ? 14 : 6;
+                    ctx.fillStyle = orb.color;
+                    ctx.beginPath();
+                    ctx.arc(nx, ny, nr, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    ctx.shadowBlur = 0;
+                    ctx.fillStyle = '#ffffff';
+                    ctx.beginPath();
+                    ctx.arc(nx, ny, nr * 0.55, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+
+                ctx.restore();
+            }
+            ctx.restore();
+        }
+
+        renderMenuHeroCore(ctx, vw, vh, baseCoreX, baseCoreY, menuCoreX, menuCoreY, coreRadius, rot3D, tiltY, time, kickEnergy, hoverBoost, easeT, coreIntro, sceneFade) {
+            const shellFade = Math.max(0, 1 - easeT * 1.35);
+
+            // 1. Atmospheric outer cyan-blue bloom behind core
+            ctx.save();
+            ctx.globalCompositeOperation = 'screen';
+            const bloomR = coreRadius * (2.55 + kickEnergy * 0.45 + hoverBoost * 0.45);
+            const outerBloom = ctx.createRadialGradient(
+                baseCoreX, baseCoreY, coreRadius * 0.15,
+                baseCoreX, baseCoreY, bloomR
+            );
+            const bloomAlpha = Math.min(0.95, (0.48 + kickEnergy * 0.28 + hoverBoost * 0.22) * coreIntro);
+            outerBloom.addColorStop(0, `rgba(215, 248, 255, ${bloomAlpha})`);
+            outerBloom.addColorStop(0.26, `rgba(0, 245, 212, ${bloomAlpha * 0.46})`);
+            outerBloom.addColorStop(0.56, `rgba(42, 138, 204, ${bloomAlpha * 0.24})`);
+            outerBloom.addColorStop(1, 'rgba(8, 35, 65, 0)');
+            ctx.fillStyle = outerBloom;
+            ctx.beginPath();
+            ctx.arc(baseCoreX, baseCoreY, bloomR, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+
+            // 2. Subtle circular audio-reactive harmonic corona
+            this.renderMenuHarmonicCorona(ctx, baseCoreX, baseCoreY, coreRadius, time, kickEnergy, hoverBoost, shellFade * coreIntro);
+
+            // 3. Back pass of 3D gyroscopic orbital rings
+            const ringScale = 1 - easeT * 0.85;
+            this.renderMenuOrbitalArcs(ctx, baseCoreX, baseCoreY, coreRadius, rot3D, tiltY, false, ringScale, hoverBoost, shellFade * coreIntro);
+
+            // 4. Launch-to-ball light comet ribbon during transition
+            if (easeT > 0.02) {
+                ctx.save();
+                ctx.globalCompositeOperation = 'lighter';
+                const grad = ctx.createLinearGradient(menuCoreX, menuCoreY, baseCoreX, baseCoreY);
+                grad.addColorStop(0, 'rgba(0, 245, 212, 0)');
+                grad.addColorStop(0.55, `rgba(0, 245, 212, ${0.42 * (1 - easeT * 0.4)})`);
+                grad.addColorStop(1, 'rgba(255, 255, 255, 0.9)');
+                ctx.strokeStyle = grad;
+                ctx.lineWidth = Math.max(4, coreRadius * 0.95);
+                ctx.lineCap = 'round';
+                ctx.beginPath();
+                ctx.moveTo(menuCoreX, menuCoreY);
+                ctx.lineTo(baseCoreX, baseCoreY);
+                ctx.stroke();
+                ctx.restore();
+            }
+
+            // 5. Nano Banana Bioluminescent Plasma Core plate (centered to measured sphere center 0.485, 0.482)
+            const coreAsset = this.menuAssets && this.menuAssets.core;
+            const spriteFade = Math.max(0, 1 - Math.max(0, easeT - 0.35) / 0.65);
+            if (coreAsset && coreAsset.loaded && spriteFade > 0.01) {
+                const drawSize = (coreRadius / 0.2217) * (0.82 + coreIntro * 0.18);
+                const pivotX = 0.485 * drawSize;
+                const pivotY = 0.482 * drawSize;
+
+                ctx.save();
+                ctx.globalCompositeOperation = 'screen';
+                ctx.translate(baseCoreX, baseCoreY);
+                ctx.rotate(rot3D * 0.16 + Math.sin(time * 0.48) * 0.045);
+                ctx.globalAlpha = Math.min(1, (0.94 + hoverBoost * 0.06) * coreIntro * spriteFade);
+                ctx.drawImage(coreAsset.img, -pivotX, -pivotY, drawSize, drawSize);
+
+                // Soft extra luminous heart flare on hover or audio kick
+                if (hoverBoost > 0.04 || kickEnergy > 0.25) {
+                    const flareR = coreRadius * 0.88;
+                    const fg = ctx.createRadialGradient(0, 0, 0, 0, 0, flareR);
+                    const fAlpha = Math.min(0.45, (hoverBoost * 0.28 + kickEnergy * 0.2) * coreIntro * spriteFade);
+                    fg.addColorStop(0, `rgba(255, 255, 255, ${fAlpha})`);
+                    fg.addColorStop(0.55, `rgba(0, 245, 212, ${fAlpha * 0.45})`);
+                    fg.addColorStop(1, 'rgba(0, 245, 212, 0)');
+                    ctx.fillStyle = fg;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, flareR, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                ctx.restore();
+            }
+
+            // 6. Condensed white-hot arcade ball crossfade at end of transition (or fallback)
+            const ballCrossfade = (!coreAsset || !coreAsset.loaded) ? 1 : Math.max(0, (easeT - 0.3) / 0.7);
+            if (ballCrossfade > 0.01) {
+                ctx.save();
+                ctx.globalAlpha = ballCrossfade * coreIntro;
+                ctx.shadowColor = '#00f5d4';
+                ctx.shadowBlur = 20;
+                ctx.fillStyle = '#00f5d4';
+                ctx.beginPath();
+                ctx.arc(baseCoreX, baseCoreY, coreRadius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = '#ffffff';
+                ctx.beginPath();
+                ctx.arc(baseCoreX, baseCoreY, coreRadius * 0.65, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
+
+            // 7. Front pass of 3D gyroscopic orbital rings & orbiting light spheres
+            this.renderMenuOrbitalArcs(ctx, baseCoreX, baseCoreY, coreRadius, rot3D, tiltY, true, ringScale, hoverBoost, shellFade * coreIntro);
+        }
+
+        renderMenuRipplesAndWake(ctx, baseCoreX, baseCoreY, sceneFade) {
+            // Expanding shockwave ripples
+            if (this.menuRipples) {
+                ctx.save();
+                ctx.globalCompositeOperation = 'screen';
+                for (let i = 0; i < this.menuRipples.length; i++) {
+                    const r = this.menuRipples[i];
+                    if (!r.active) continue;
+                    const p = Math.max(0, r.life / r.maxLife);
+                    const rx = r.isCoreAnchored ? baseCoreX : r.x;
+                    const ry = r.isCoreAnchored ? baseCoreY : r.y;
+
+                    ctx.globalAlpha = p * 0.48 * sceneFade;
+                    ctx.strokeStyle = r.color;
+                    ctx.lineWidth = 1.1 + p * 1.4;
+                    ctx.beginPath();
+                    ctx.arc(rx, ry, r.radius, 0, Math.PI * 2);
+                    ctx.stroke();
+                }
+                ctx.restore();
+            }
+
+            // Subtle cursor bioluminescent motes
+            if (this.menuCursorWake) {
+                ctx.save();
+                ctx.globalCompositeOperation = 'screen';
+                for (let i = 0; i < this.menuCursorWake.length; i++) {
+                    const m = this.menuCursorWake[i];
+                    if (!m.active) continue;
+                    const p = Math.max(0, m.life / m.maxLife);
+                    ctx.globalAlpha = p * 0.65 * sceneFade;
+                    ctx.fillStyle = '#a8f0ff';
+                    ctx.shadowColor = '#00f5d4';
+                    ctx.shadowBlur = 8;
+                    ctx.beginPath();
+                    ctx.arc(m.x, m.y, m.size * (0.4 + p * 0.6), 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                ctx.restore();
+            }
         }
 
         renderParallaxMenu(ctx, pulse, dt) {
@@ -1706,335 +2211,90 @@ window.PWONYX = window.PWONYX || {};
             const vh = this.viewHeight;
             const minDim = Math.min(vw, vh);
 
-            // Parallaxes updated with smooth lerp (0.02, 0.05, 0.08)
             const bgX = this.parallax.bgX || 0;
             const bgY = this.parallax.bgY || 0;
+            const veilX = this.parallax.veilX || 0;
+            const veilY = this.parallax.veilY || 0;
             const coreX = this.parallax.coreX || 0;
             const coreY = this.parallax.coreY || 0;
             const fgX = this.parallax.fgX || 0;
             const fgY = this.parallax.fgY || 0;
             const rot3D = this.parallax.rot3D || 0;
+            const tiltY = this.parallax.tiltY || 0;
 
             const isTrans = this.state === 'transitioning';
             const t = this.transitionProgress || 0;
             const easeT = t * t * (3 - 2 * t);
+            const warpScale = 1 + easeT * 0.16;
             const sceneFade = Math.max(0, 1 - easeT * 1.15);
 
-            // Web Audio API low-frequency (kick/bass) reactivity + organic idle breathing
+            // Smooth staggered entrance reveal (0 -> 1 over ~1.25s)
+            const introRaw = Math.min(1, (this.menuIntroTimer || 0) / 1.15);
+            const introFade = 1 - Math.pow(1 - Math.min(1, introRaw * 1.6), 3);
+            const veilIntro = 1 - Math.pow(1 - Math.max(0, Math.min(1, (introRaw - 0.1) / 0.85)), 3);
+            const coreIntro = 1 - Math.pow(1 - Math.max(0, Math.min(1, (introRaw - 0.18) / 0.82)), 3);
+
             const bass = Audio.bassEnergy || 0;
             const beat = Audio.beatPulse || 0;
-            const idleBreath = Math.sin(time * 1.9) * 0.5 + 0.5;
-            const kickEnergy = Math.max(bass * 1.15, beat * 0.9, idleBreath * 0.16) + (this.flowClickPulse || 0) * 0.45;
+            const idleBreath = Math.sin(time * 1.85) * 0.5 + 0.5;
+            const kickEnergy = Math.max(bass * 1.15, beat * 0.9, idleBreath * 0.14) + (this.flowClickPulse || 0) * 0.45;
+            const hoverBoost = this.menuPlayHover || 0;
 
-            // =========================================================================
-            // 1. DEEP PETROL / MARINE BLUE ATMOSPHERIC BACKGROUND + TOP-RIGHT ILLUMINATION
-            // =========================================================================
-            const bgGrad = ctx.createLinearGradient(vw * 0.12, vh * 0.95, vw * 0.92, vh * 0.04);
-            bgGrad.addColorStop(0, '#020509');
-            bgGrad.addColorStop(0.35, '#05101c');
-            bgGrad.addColorStop(0.7, '#0d2942');
-            bgGrad.addColorStop(1, '#1d4d6e');
-            ctx.fillStyle = bgGrad;
+            // Clear base to abyssal black
+            ctx.fillStyle = '#02050a';
             ctx.fillRect(0, 0, vw, vh);
 
-            // Radial cyan-petrol atmospheric glow emanating from top-right corner
-            const trX = vw * 0.88 - bgX * 1.4;
-            const trY = vh * 0.10 - bgY * 1.4;
-            const topRightGlow = ctx.createRadialGradient(trX, trY, minDim * 0.02, trX, trY, Math.max(vw, vh) * 0.95);
-            topRightGlow.addColorStop(0, `rgba(115, 200, 242, ${(0.38 + kickEnergy * 0.08) * sceneFade})`);
-            topRightGlow.addColorStop(0.28, `rgba(54, 132, 178, ${0.28 * sceneFade})`);
-            topRightGlow.addColorStop(0.62, `rgba(16, 48, 76, ${0.14 * sceneFade})`);
-            topRightGlow.addColorStop(1, 'rgba(3, 8, 15, 0)');
-            ctx.fillStyle = topRightGlow;
-            ctx.fillRect(0, 0, vw, vh);
+            // Plane 0: Deep oceanic-cosmic atmosphere + volumetric god rays
+            this.renderMenuBackdrop(ctx, vw, vh, bgX, bgY, rot3D, warpScale, kickEnergy, sceneFade);
 
-            // Soft Volumetric Light Shafts (God Rays) from top-right to bottom-left
-            ctx.save();
-            ctx.globalCompositeOperation = 'screen';
-            const rayOriginX = vw * 1.05 - bgX * 1.6;
-            const rayOriginY = -vh * 0.08 - bgY * 1.6;
-            const rayAngles = [2.32, 2.41, 2.49, 2.57, 2.66, 2.75];
-            const rayWidths = [0.09, 0.14, 0.07, 0.12, 0.08, 0.11];
-            const rayLen = Math.hypot(vw, vh) * 1.35;
+            // Plane 1: Far starlight & distant dust (0.025x)
+            this.renderFlowParticleLayer(ctx, 0, bgX * 1.35, bgY * 1.35, vw, vh, time, kickEnergy, sceneFade * introFade);
 
-            for (let r = 0; r < rayAngles.length; r++) {
-                const shimmer = Math.sin(time * 0.55 + r * 1.7) * 0.015;
-                const angle = rayAngles[r] + shimmer + rot3D * 0.08;
-                const halfSpread = rayWidths[r];
-                const x1 = rayOriginX + Math.cos(angle - halfSpread) * rayLen;
-                const y1 = rayOriginY + Math.sin(angle - halfSpread) * rayLen;
-                const x2 = rayOriginX + Math.cos(angle + halfSpread) * rayLen;
-                const y2 = rayOriginY + Math.sin(angle + halfSpread) * rayLen;
+            // Plane 2: Bioluminescent silk flow veil (0.048x)
+            this.renderMenuVeil(ctx, vw, vh, veilX, veilY, rot3D, tiltY, warpScale, kickEnergy, veilIntro, sceneFade);
 
-                const rayGrad = ctx.createLinearGradient(
-                    rayOriginX,
-                    rayOriginY,
-                    rayOriginX + Math.cos(angle) * rayLen * 0.85,
-                    rayOriginY + Math.sin(angle) * rayLen * 0.85
-                );
-                const baseRayAlpha = (0.048 + (r % 2) * 0.022 + kickEnergy * 0.018) * sceneFade;
-                rayGrad.addColorStop(0, `rgba(155, 226, 255, ${baseRayAlpha * 1.3})`);
-                rayGrad.addColorStop(0.35, `rgba(92, 182, 230, ${baseRayAlpha})`);
-                rayGrad.addColorStop(0.75, `rgba(34, 98, 145, ${baseRayAlpha * 0.35})`);
-                rayGrad.addColorStop(1, 'rgba(10, 35, 60, 0)');
+            // Plane 3: Mid-depth bioluminescent spores (0.062x)
+            this.renderFlowParticleLayer(ctx, 1, coreX * 0.78, coreY * 0.78, vw, vh, time, kickEnergy, sceneFade * veilIntro);
 
-                ctx.fillStyle = rayGrad;
-                ctx.beginPath();
-                ctx.moveTo(rayOriginX, rayOriginY);
-                ctx.lineTo(x1, y1);
-                ctx.lineTo(x2, y2);
-                ctx.closePath();
-                ctx.fill();
-            }
-            ctx.restore();
-
-            // Deep bottom-left abyssal shadow vignette for rich contrast
-            const blShadow = ctx.createRadialGradient(
-                vw * 0.08, vh * 0.92, minDim * 0.05,
-                vw * 0.18, vh * 0.85, Math.max(vw, vh) * 0.85
-            );
-            blShadow.addColorStop(0, 'rgba(1, 3, 7, 0.82)');
-            blShadow.addColorStop(0.55, 'rgba(2, 6, 12, 0.38)');
-            blShadow.addColorStop(1, 'rgba(2, 6, 12, 0)');
-            ctx.fillStyle = blShadow;
-            ctx.fillRect(0, 0, vw, vh);
-
-            // =========================================================================
-            // 2. LAYER 0: BACKGROUND PARTICLES (Factor 0.02)
-            // =========================================================================
-            this.renderFlowParticleLayer(ctx, 0, bgX, bgY, vw, vh, time, kickEnergy, sceneFade);
-
-            // =========================================================================
-            // 3. CENTRAL ORGANIC CORE + TRANSLUCENT WAVY TRAIL SHELLS (Factor 0.05)
-            // =========================================================================
-            // Centered horizontally above "P W O N Y X" / "P L A Y"; during transition,
-            // smoothly glides down to the bottom paddle launch zone and condenses into the first ball.
+            // Plane 4: Hero bioluminescent core + 3D gyroscopic orbital rings (0.082x)
             const floatY = Math.sin(time * 1.35) * 6 * (1 - easeT);
             const floatX = Math.cos(time * 0.95) * 4 * (1 - easeT);
-            const menuCoreX = vw * 0.50 - coreX * 1.15 + floatX;
-            const menuCoreY = vh * 0.43 - coreY * 1.15 + floatY;
+            const menuCoreX = vw * 0.50 - coreX + floatX;
+            const menuCoreY = vh * 0.39 - coreY + floatY;
             const launchX = this.arenaX + this.arenaWidth * 0.5;
             const launchY = this.arenaY + this.arenaHeight - CFG.PADDLE_Y_OFFSET - 18;
 
             const baseCoreX = menuCoreX + (launchX - menuCoreX) * easeT;
             const baseCoreY = menuCoreY + (launchY - menuCoreY) * easeT;
 
-            // Audio-reactive scale & bloom intensity on low-frequency kick; condenses to ball radius (9px) on start
-            const kickScale = 1 + kickEnergy * 0.075 * (1 - easeT);
-            const menuRadius = minDim * 0.145 * kickScale;
+            const kickScale = 1 + (kickEnergy * 0.055 + hoverBoost * 0.045) * (1 - easeT);
+            const menuRadius = minDim * 0.125 * kickScale;
             const coreRadius = isTrans ? menuRadius + (9 - menuRadius) * easeT : menuRadius;
-            const shellFade = Math.max(0, 1 - easeT * 1.5);
 
-            // Trail direction vector pointing toward the upper-left (~ -163 deg, matching Creo - Flow)
-            const trailAngle = -2.84 + rot3D * 0.28 + Math.sin(time * 0.7) * 0.025;
-            const dirX = Math.cos(trailAngle);
-            const dirY = Math.sin(trailAngle);
-            const perpX = -dirY;
-            const perpY = dirX;
-
-            // --- 3A. Translucent Wavy Trail Silhouette Shells (Back-to-Front: 7 down to 1) ---
-            const numShells = 7;
-            const maxTrailDist = coreRadius * 2.55 * (1 - easeT * 0.5);
-
-            ctx.save();
-            for (let i = numShells; i >= 1; i--) {
-                const frac = i / numShells; // 1.0 (furthest left) -> 0.14 (closest to core)
-                // Subtle 3D parallax foreshortening when rotating with mouse
-                const depth3DShift = rot3D * coreRadius * 1.45 * frac;
-                const waveUndulation = Math.sin(time * 1.8 - i * 0.65) * (coreRadius * 0.045 * frac);
-
-                const sx = baseCoreX + dirX * (maxTrailDist * Math.pow(frac, 0.92)) + depth3DShift + perpX * waveUndulation;
-                const sy = baseCoreY + dirY * (maxTrailDist * Math.pow(frac, 0.92)) + perpY * waveUndulation;
-
-                // Shells taper down as they trail to the upper-left and compress slightly along the trail axis
-                const shellScale = (1 - frac * 0.54) * (1 + kickEnergy * 0.03 * (1 - frac));
-                const rx = coreRadius * shellScale * (0.86 + 0.06 * Math.cos(rot3D));
-                const ry = coreRadius * shellScale * 1.04;
-                const shellPhase = i * 1.35 + time * 0.55;
-
-                ctx.save();
-                ctx.translate(sx, sy);
-                ctx.rotate(trailAngle + Math.PI + rot3D * 0.2 * frac);
-
-                // Trace organic wavy jellyfish-bell / frozen-smoke silhouette
-                this.traceOrganicContour(ctx, 0, 0, rx, ry, shellPhase, rot3D, 0.085 + frac * 0.03);
-
-                // Translucent smoky cyan-petrol fill with brighter rim toward the core
-                const shellAlpha = (0.11 + (1 - frac) * 0.22) * shellFade;
-                const fillGrad = ctx.createLinearGradient(-rx, -ry * 0.3, rx * 1.1, ry * 0.4);
-                fillGrad.addColorStop(0, `rgba(14, 42, 68, ${shellAlpha * 0.55})`);
-                fillGrad.addColorStop(0.55, `rgba(62, 138, 185, ${shellAlpha * 0.85})`);
-                fillGrad.addColorStop(1, `rgba(175, 230, 255, ${shellAlpha * 1.25})`);
-                ctx.fillStyle = fillGrad;
-                ctx.fill();
-
-                // Crisp gossamer rim highlight (characteristic translucent layered ridge in Creo - Flow)
-                ctx.lineWidth = 1.2 + (1 - frac) * 1.3;
-                ctx.strokeStyle = `rgba(182, 232, 255, ${(0.16 + (1 - frac) * 0.34 + kickEnergy * 0.08) * shellFade})`;
-                ctx.shadowColor = '#7fd8ff';
-                ctx.shadowBlur = 10 + (1 - frac) * 12;
-                ctx.stroke();
-
-                // Delicate internal curved membrane ribs (frozen smoke / jellyfish striations)
-                ctx.shadowBlur = 0;
-                ctx.strokeStyle = `rgba(195, 238, 255, ${(0.07 + (1 - frac) * 0.12) * shellFade})`;
-                ctx.lineWidth = 0.85;
-                for (let rib = -1; rib <= 1; rib++) {
-                    ctx.beginPath();
-                    const ribY = rib * ry * 0.36;
-                    ctx.moveTo(-rx * 0.65, ribY * 0.7);
-                    ctx.quadraticCurveTo(
-                        0,
-                        ribY + Math.sin(shellPhase + rib) * ry * 0.14,
-                        rx * 0.78,
-                        ribY * 0.85
-                    );
-                    ctx.stroke();
-                }
-
-                ctx.restore();
-            }
-            ctx.restore();
-
-            // --- 3B. Intense Outer Cyan-Blue Atmospheric Bloom around Central Core ---
-            ctx.save();
-            ctx.globalCompositeOperation = 'screen';
-            const bloomRadius = coreRadius * (2.65 + kickEnergy * 0.55);
-            const outerBloom = ctx.createRadialGradient(
-                baseCoreX, baseCoreY, coreRadius * 0.25,
-                baseCoreX, baseCoreY, bloomRadius
-            );
-            const bloomIntensity = Math.min(1, 0.62 + kickEnergy * 0.35);
-            outerBloom.addColorStop(0, `rgba(235, 250, 255, ${bloomIntensity})`);
-            outerBloom.addColorStop(0.28, `rgba(120, 212, 255, ${bloomIntensity * 0.78})`);
-            outerBloom.addColorStop(0.58, `rgba(42, 138, 204, ${bloomIntensity * 0.36})`);
-            outerBloom.addColorStop(1, 'rgba(12, 55, 95, 0)');
-            ctx.fillStyle = outerBloom;
-            ctx.beginPath();
-            ctx.arc(baseCoreX, baseCoreY, bloomRadius, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.restore();
-
-            // --- 3C. Sculpted Translucent Rim Folds Embracing the Core ---
-            for (let fold = 2; fold >= 1; fold--) {
-                const foldScale = 1.06 + fold * 0.075 + kickEnergy * 0.03;
-                const foldShiftX = -dirX * coreRadius * 0.06 * fold + rot3D * coreRadius * 0.25;
-                const foldShiftY = -dirY * coreRadius * 0.06 * fold;
-
-                ctx.save();
-                ctx.translate(baseCoreX + foldShiftX, baseCoreY + foldShiftY);
-                ctx.rotate(rot3D * 0.18);
-                this.traceOrganicContour(
-                    ctx,
-                    0,
-                    0,
-                    coreRadius * foldScale,
-                    coreRadius * foldScale * 0.96,
-                    time * 0.8 + fold * 2.1,
-                    rot3D,
-                    0.065 * (1 - easeT)
-                );
-                const foldGrad = ctx.createRadialGradient(
-                    coreRadius * 0.15, -coreRadius * 0.1, coreRadius * 0.2,
-                    0, 0, coreRadius * foldScale * 1.1
-                );
-                foldGrad.addColorStop(0, `rgba(255, 255, 255, ${0.45 * shellFade})`);
-                foldGrad.addColorStop(0.65, `rgba(155, 222, 255, ${0.32 * shellFade})`);
-                foldGrad.addColorStop(1, `rgba(70, 165, 225, ${0.08 * shellFade})`);
-                ctx.fillStyle = foldGrad;
-                ctx.fill();
-
-                ctx.lineWidth = 1.4;
-                ctx.strokeStyle = `rgba(200, 242, 255, ${(0.38 + kickEnergy * 0.15) * shellFade})`;
-                ctx.stroke();
-                ctx.restore();
-            }
-
-            // --- 3D. White-Hot Emissive Central Core (condenses into the game ball on start) ---
-            ctx.save();
-            ctx.translate(baseCoreX, baseCoreY);
-            ctx.rotate(rot3D * 0.12);
-
-            this.traceOrganicContour(
-                ctx,
-                0,
-                0,
-                coreRadius * 1.02,
-                coreRadius * 0.97,
-                time * 0.65,
-                rot3D,
-                0.052 * (1 - easeT)
+            this.renderMenuHeroCore(
+                ctx, vw, vh, baseCoreX, baseCoreY, menuCoreX, menuCoreY,
+                coreRadius, rot3D, tiltY, time, kickEnergy, hoverBoost, easeT, coreIntro, sceneFade
             );
 
-            // Inner gradient matching Creo - Flow's white-hot right dome, subtle warm blush core, and icy-cyan left rim
-            const coreGrad = ctx.createRadialGradient(
-                coreRadius * 0.22 - rot3D * coreRadius * 0.4,
-                -coreRadius * 0.08,
-                coreRadius * 0.08,
-                0,
-                0,
-                coreRadius * 1.08
-            );
-            coreGrad.addColorStop(0, 'rgba(255, 255, 255, 1)');
-            coreGrad.addColorStop(0.42, 'rgba(255, 250, 247, 1)');
-            coreGrad.addColorStop(0.68, 'rgba(244, 232, 232, 0.98)');
-            coreGrad.addColorStop(0.88, 'rgba(195, 228, 250, 0.96)');
-            coreGrad.addColorStop(1, 'rgba(0, 245, 212, 0.92)');
+            // Plane 5: Interactive shockwave ripples & cursor motes
+            this.renderMenuRipplesAndWake(ctx, baseCoreX, baseCoreY, sceneFade);
 
-            ctx.shadowColor = '#9be4ff';
-            ctx.shadowBlur = 34 + kickEnergy * 32;
-            ctx.fillStyle = coreGrad;
-            ctx.fill();
+            // Plane 6: Foreground out-of-focus bokeh & dark depth silhouettes (0.135x)
+            this.renderFlowParticleLayer(ctx, 2, fgX, fgY, vw, vh, time, kickEnergy, sceneFade * coreIntro);
 
-            // Subtle internal sculptural shading folds inside the white-hot mass (left side relief)
-            ctx.save();
-            ctx.clip();
-            for (let c = 0; c < 3; c++) {
-                const creaseX = -coreRadius * (0.28 + c * 0.22) + rot3D * coreRadius * 0.35;
-                const creaseGrad = ctx.createLinearGradient(
-                    creaseX - coreRadius * 0.25, 0,
-                    creaseX + coreRadius * 0.35, 0
-                );
-                creaseGrad.addColorStop(0, 'rgba(150, 195, 230, 0)');
-                creaseGrad.addColorStop(0.5, `rgba(165, 202, 232, ${0.24 * sceneFade})`);
-                creaseGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
-                ctx.fillStyle = creaseGrad;
-                ctx.beginPath();
-                ctx.ellipse(creaseX, 0, coreRadius * 0.32, coreRadius * 0.95, 0.18, 0, Math.PI * 2);
-                ctx.fill();
+            // Soft abyssal vignette framing bottom UI legibility & cinematic intro fade-in
+            const botGrad = ctx.createLinearGradient(0, vh * 0.62, 0, vh);
+            botGrad.addColorStop(0, 'rgba(2, 5, 10, 0)');
+            botGrad.addColorStop(1, `rgba(2, 5, 10, ${0.58 * sceneFade})`);
+            ctx.fillStyle = botGrad;
+            ctx.fillRect(0, vh * 0.62, vw, vh * 0.38);
+
+            if (introFade < 0.999) {
+                ctx.fillStyle = `rgba(2, 5, 10, ${1 - introFade})`;
+                ctx.fillRect(0, 0, vw, vh);
             }
 
-            // Tiny warm-dark out-of-focus dust specks drifting across the bright white face (exact detail from reference)
-            const faceSpecks = [
-                { x: 0.08, y: 0.06, r: 0.042, a: 0.26 },
-                { x: 0.26, y: 0.36, r: 0.032, a: 0.32 },
-                { x: -0.38, y: 0.18, r: 0.038, a: 0.22 },
-                { x: -0.14, y: -0.28, r: 0.025, a: 0.18 }
-            ];
-            for (let s = 0; s < faceSpecks.length; s++) {
-                const sp = faceSpecks[s];
-                const sx = (sp.x + Math.sin(time * 0.4 + s) * 0.02) * coreRadius - fgX * 0.15;
-                const sy = (sp.y + Math.cos(time * 0.35 + s) * 0.02) * coreRadius - fgY * 0.15;
-                const sr = sp.r * coreRadius;
-                const sg = ctx.createRadialGradient(sx, sy, 0, sx, sy, sr);
-                sg.addColorStop(0, `rgba(92, 64, 68, ${sp.a * sceneFade})`);
-                sg.addColorStop(0.6, `rgba(128, 96, 102, ${sp.a * 0.45 * sceneFade})`);
-                sg.addColorStop(1, 'rgba(128, 96, 102, 0)');
-                ctx.fillStyle = sg;
-                ctx.beginPath();
-                ctx.arc(sx, sy, sr, 0, Math.PI * 2);
-                ctx.fill();
-            }
-            ctx.restore();
-            ctx.restore();
-
-            // =========================================================================
-            // 4. LAYER 1 & LAYER 2: MID AND FOREGROUND BOKEH & DARK SILHOUETTE DUST
-            // =========================================================================
-            this.renderFlowParticleLayer(ctx, 1, coreX, coreY, vw, vh, time, kickEnergy, sceneFade);
-            this.renderFlowParticleLayer(ctx, 2, fgX, fgY, vw, vh, time, kickEnergy, sceneFade);
-
-            // Render interactive click shockwaves / burst particles
+            // Render any burst particles
             this.renderParticles(ctx);
         }
 
