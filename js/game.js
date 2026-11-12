@@ -86,16 +86,11 @@ window.PWONYX = window.PWONYX || {};
             this.flowParticles = [];
             this.initFlowParticles();
 
-            // Parallax image assets
+            // Parallax image asset
             this.parallaxBgImg = new Image();
             this.parallaxBgImg.src = 'assets/images/parallax_bg.jpg';
             this.parallaxBgLoaded = false;
             this.parallaxBgImg.onload = () => { this.parallaxBgLoaded = true; };
-
-            this.parallaxReliefImg = new Image();
-            this.parallaxReliefImg.src = 'assets/images/parallax_relief.jpg';
-            this.parallaxReliefLoaded = false;
-            this.parallaxReliefImg.onload = () => { this.parallaxReliefLoaded = true; };
 
             // Preload Sci-Fi Power-up Icons
             this.powerupIcons = {
@@ -210,54 +205,86 @@ window.PWONYX = window.PWONYX || {};
         get width() { return this.viewWidth; }
         get height() { return this.viewHeight; }
 
+        createFlowSprite(stops) {
+            const c = document.createElement('canvas');
+            c.width = 64;
+            c.height = 64;
+            const gctx = c.getContext('2d');
+            const g = gctx.createRadialGradient(32, 32, 1, 32, 32, 31);
+            stops.forEach(([offset, color]) => g.addColorStop(offset, color));
+            gctx.fillStyle = g;
+            gctx.fillRect(0, 0, 64, 64);
+            return c;
+        }
+
+        initFlowSprites() {
+            this.flowSprites = {
+                dark: this.createFlowSprite([
+                    [0, 'rgba(2, 7, 13, 1)'],
+                    [0.58, 'rgba(5, 14, 24, 0.65)'],
+                    [1, 'rgba(5, 14, 24, 0)']
+                ]),
+                bokeh: this.createFlowSprite([
+                    [0, 'rgba(240, 252, 255, 1)'],
+                    [0.42, 'rgba(145, 224, 255, 0.45)'],
+                    [1, 'rgba(70, 175, 235, 0)']
+                ]),
+                glow: this.createFlowSprite([
+                    [0, 'rgba(150, 228, 255, 1)'],
+                    [0.48, 'rgba(65, 165, 225, 0.4)'],
+                    [1, 'rgba(25, 95, 155, 0)']
+                ])
+            };
+        }
+
+        pushFlowParticle(layer, factor, speed, spread, waveAmp, waveFreq, rotSpeed, r, alpha, isDark, overrides = {}) {
+            const driftAngle = Math.PI * (0.80 + spread);
+            this.flowParticles.push(Object.assign({
+                layer,
+                factor,
+                nx: Math.random() * 1.2 - 0.1,
+                ny: Math.random() * 1.2 - 0.1,
+                vx: Math.cos(driftAngle) * speed,
+                vy: Math.sin(driftAngle) * speed,
+                waveAmp,
+                waveFreq,
+                rotSpeed,
+                r,
+                aspect: 0.55 + Math.random() * 0.4,
+                angle: Math.random() * Math.PI,
+                alpha,
+                phase: Math.random() * Math.PI * 2,
+                isDark,
+                isBokeh: !isDark
+            }, overrides));
+        }
+
         initFlowParticles() {
+            this.initFlowSprites();
             this.flowParticles = [];
-            // Layer 0: Background space dust & faint cyan bokeh (factor 0.02) — steady atmospheric drift across screen
+
+            // Layer 0: Background space dust & faint cyan bokeh (factor 0.02)
             for (let i = 0; i < 46; i++) {
-                const speed = 0.018 + Math.random() * 0.028;
-                const driftAngle = Math.PI * (0.78 + (Math.random() - 0.5) * 0.28); // flows upper-right toward lower-left
-                this.flowParticles.push({
-                    layer: 0,
-                    factor: 0.02,
-                    nx: Math.random() * 1.2 - 0.1,
-                    ny: Math.random() * 1.2 - 0.1,
-                    vx: Math.cos(driftAngle) * speed,
-                    vy: Math.sin(driftAngle) * speed,
-                    waveAmp: 0.004 + Math.random() * 0.008,
-                    waveFreq: 0.8 + Math.random() * 1.2,
-                    rotSpeed: 0,
-                    r: 1.1 + Math.random() * 2.8,
-                    alpha: 0.12 + Math.random() * 0.28,
-                    phase: Math.random() * Math.PI * 2,
-                    isDark: false,
-                    isBokeh: Math.random() > 0.42
-                });
+                this.pushFlowParticle(
+                    0, 0.02, 0.018 + Math.random() * 0.028, (Math.random() - 0.5) * 0.28,
+                    0.004 + Math.random() * 0.008, 0.8 + Math.random() * 1.2, 0,
+                    1.1 + Math.random() * 2.8, 0.12 + Math.random() * 0.28, false,
+                    { isBokeh: Math.random() > 0.42 }
+                );
             }
+
             // Layer 1: Midground organic specks & soft bokeh near the core/trail (factor 0.05)
             for (let i = 0; i < 24; i++) {
                 const isDark = i < 10;
-                const speed = 0.036 + Math.random() * 0.045;
-                const driftAngle = Math.PI * (0.80 + (Math.random() - 0.5) * 0.24);
-                this.flowParticles.push({
-                    layer: 1,
-                    factor: 0.05,
-                    nx: Math.random() * 1.2 - 0.1,
-                    ny: Math.random() * 1.2 - 0.1,
-                    vx: Math.cos(driftAngle) * speed,
-                    vy: Math.sin(driftAngle) * speed,
-                    waveAmp: 0.008 + Math.random() * 0.012,
-                    waveFreq: 1.0 + Math.random() * 1.4,
-                    rotSpeed: (Math.random() - 0.5) * 0.45,
-                    r: isDark ? 2.6 + Math.random() * 4.6 : 2.4 + Math.random() * 5.2,
-                    aspect: 0.55 + Math.random() * 0.4,
-                    angle: Math.random() * Math.PI,
-                    alpha: isDark ? 0.48 + Math.random() * 0.34 : 0.15 + Math.random() * 0.24,
-                    phase: Math.random() * Math.PI * 2,
-                    isDark,
-                    isBokeh: !isDark
-                });
+                this.pushFlowParticle(
+                    1, 0.05, 0.036 + Math.random() * 0.045, (Math.random() - 0.5) * 0.24,
+                    0.008 + Math.random() * 0.012, 1.0 + Math.random() * 1.4, (Math.random() - 0.5) * 0.45,
+                    isDark ? 2.6 + Math.random() * 4.6 : 2.4 + Math.random() * 5.2,
+                    isDark ? 0.48 + Math.random() * 0.34 : 0.15 + Math.random() * 0.24, isDark
+                );
             }
-            // Layer 2: Foreground out-of-focus dark silhouettes & bokeh dust (factor 0.08) — visibly passing across the lens
+
+            // Layer 2: Foreground out-of-focus dark silhouettes & bokeh dust (factor 0.08)
             const fgPresets = [
                 { nx: 0.515, ny: 0.22, r: 7.5, aspect: 0.48, angle: 0.65, isDark: true, alpha: 0.78 },
                 { nx: 0.735, ny: 0.25, r: 5.5, aspect: 0.62, angle: -0.4, isDark: true, alpha: 0.72 },
@@ -269,49 +296,21 @@ window.PWONYX = window.PWONYX || {};
                 { nx: 0.24, ny: 0.75, r: 4.5, aspect: 0.85, angle: 0.1, isDark: false, alpha: 0.28 }
             ];
             fgPresets.forEach((p, idx) => {
-                const speed = 0.055 + (idx % 3) * 0.022;
-                const driftAngle = Math.PI * (0.81 + ((idx % 5) - 2) * 0.05);
-                this.flowParticles.push({
-                    layer: 2,
-                    factor: 0.08,
-                    nx: p.nx,
-                    ny: p.ny,
-                    vx: Math.cos(driftAngle) * speed,
-                    vy: Math.sin(driftAngle) * speed,
-                    waveAmp: 0.01 + (idx % 3) * 0.005,
-                    waveFreq: 1.1 + (idx % 4) * 0.25,
-                    rotSpeed: (idx % 2 === 0 ? 1 : -1) * 0.32,
-                    r: p.r,
-                    aspect: p.aspect,
-                    angle: p.angle,
-                    alpha: p.alpha,
-                    phase: idx * 1.1,
-                    isDark: p.isDark,
-                    isBokeh: !p.isDark
-                });
+                this.pushFlowParticle(
+                    2, 0.08, 0.055 + (idx % 3) * 0.022, ((idx % 5) - 2) * 0.05,
+                    0.01 + (idx % 3) * 0.005, 1.1 + (idx % 4) * 0.25, (idx % 2 === 0 ? 1 : -1) * 0.32,
+                    p.r, p.alpha, p.isDark,
+                    { nx: p.nx, ny: p.ny, aspect: p.aspect, angle: p.angle, phase: idx * 1.1 }
+                );
             });
             for (let i = 0; i < 18; i++) {
                 const isDark = i % 3 === 0;
-                const speed = 0.06 + Math.random() * 0.065;
-                const driftAngle = Math.PI * (0.79 + (Math.random() - 0.5) * 0.25);
-                this.flowParticles.push({
-                    layer: 2,
-                    factor: 0.08,
-                    nx: Math.random() * 1.2 - 0.1,
-                    ny: Math.random() * 1.2 - 0.1,
-                    vx: Math.cos(driftAngle) * speed,
-                    vy: Math.sin(driftAngle) * speed,
-                    waveAmp: 0.01 + Math.random() * 0.014,
-                    waveFreq: 1.1 + Math.random() * 1.5,
-                    rotSpeed: (Math.random() - 0.5) * 0.6,
-                    r: isDark ? 3.2 + Math.random() * 5.0 : 3.5 + Math.random() * 7.5,
-                    aspect: 0.5 + Math.random() * 0.45,
-                    angle: Math.random() * Math.PI,
-                    alpha: isDark ? 0.42 + Math.random() * 0.35 : 0.12 + Math.random() * 0.22,
-                    phase: Math.random() * Math.PI * 2,
-                    isDark,
-                    isBokeh: !isDark
-                });
+                this.pushFlowParticle(
+                    2, 0.08, 0.06 + Math.random() * 0.065, (Math.random() - 0.5) * 0.25,
+                    0.01 + Math.random() * 0.014, 1.1 + Math.random() * 1.5, (Math.random() - 0.5) * 0.6,
+                    isDark ? 3.2 + Math.random() * 5.0 : 3.5 + Math.random() * 7.5,
+                    isDark ? 0.42 + Math.random() * 0.35 : 0.12 + Math.random() * 0.22, isDark
+                );
             }
         }
 
@@ -337,19 +336,21 @@ window.PWONYX = window.PWONYX || {};
                 updateMousePos(e.clientX, e.clientY);
             });
 
+            const unlockMenuAudio = () => {
+                if (!Audio.isPlaying) {
+                    Audio.startMusic();
+                    Audio.setLowPassEffect('normal');
+                    Audio.updateAdaptiveLayers(4);
+                }
+                this.flowClickPulse = 1.0;
+            };
+
             this.canvas.addEventListener('mousedown', (e) => {
-                if (e.button === 0) {
-                    if (this.state === 'playing') {
-                        this.fireGhostPaddle('player1');
-                    } else if (this.state === 'menu') {
-                        // Unlock & start intro music so the orb pulses to the kick via Web Audio API
-                        if (!Audio.isPlaying) {
-                            Audio.startMusic();
-                            Audio.setLowPassEffect('normal');
-                            Audio.updateAdaptiveLayers(4);
-                        }
-                        this.flowClickPulse = 1.0;
-                    }
+                if (e.button !== 0) return;
+                if (this.state === 'playing') {
+                    this.fireGhostPaddle('player1');
+                } else if (this.state === 'menu') {
+                    unlockMenuAudio();
                 }
             });
 
@@ -366,12 +367,7 @@ window.PWONYX = window.PWONYX || {};
                     if (this.state === 'playing' && e.touches.length >= 2) {
                         this.fireGhostPaddle('player1');
                     } else if (this.state === 'menu') {
-                        if (!Audio.isPlaying) {
-                            Audio.startMusic();
-                            Audio.setLowPassEffect('normal');
-                            Audio.updateAdaptiveLayers(4);
-                        }
-                        this.flowClickPulse = 1.0;
+                        unlockMenuAudio();
                     }
                 }
             }, { passive: true });
@@ -529,6 +525,8 @@ window.PWONYX = window.PWONYX || {};
             this.opponent.prevX = cx;
             this.opponent.y = this.arenaY + CFG.PADDLE_Y_OFFSET;
             this.opponent.ghostAmmo = 0;
+            this.opponent.maxGhostAmmo = baseMaxAmmo;
+            this.versusSpawnToggle = false;
 
             this.recalculatePaddleStats();
 
@@ -563,17 +561,19 @@ window.PWONYX = window.PWONYX || {};
             }
         }
 
+        getSurvivalBaseSpeed() {
+            if (!this.mode.isSurvival) return this.mode.baseBallSpeed;
+            const survivalRatio = Math.min(1, this.elapsedTime / 90);
+            return 300 + survivalRatio * (this.mode.maxBallSpeed - 300) * 0.75;
+        }
+
         /**
-         * Pwong 2-style bottom ball launch: balls emerge from behind the player's paddle
-         * (at the very bottom launcher) and shoot upward into the arena, soaring past the paddle.
+         * Pwong 2-style bottom ball launch: balls emerge from behind the paddle
+         * (alternating top/bottom in 2P Versus) and shoot into the arena.
          */
-        spawnBallFromBottom(customSpeed = null, customColor = null, customAngle = null, customX = null) {
+        spawnBallFromBottom(customSpeed = null, customColor = null, customAngle = null, customX = null, fromTop = false) {
             const musicBoost = 1 + (Audio.musicIntensity || 0.25) * 0.16;
-            let baseSpeed = this.mode.baseBallSpeed;
-            if (this.mode.isSurvival) {
-                const survivalRatio = Math.min(1, this.elapsedTime / 90);
-                baseSpeed = 300 + survivalRatio * (this.mode.maxBallSpeed - 300) * 0.75;
-            }
+            const baseSpeed = this.getSurvivalBaseSpeed();
             const speed = customSpeed !== null ? customSpeed : Math.min(
                 this.mode.maxBallSpeed * CFG.SPEED_SCALE,
                 baseSpeed * CFG.SPEED_SCALE * musicBoost
@@ -581,42 +581,41 @@ window.PWONYX = window.PWONYX || {};
 
             const angleOffset = customAngle !== null ? customAngle : (Math.random() - 0.5) * 0.64; // radians from vertical
             const vx = Math.sin(angleOffset) * speed;
-            const vy = -Math.abs(Math.cos(angleOffset) * speed); // always launch upward from bottom!
+            const dirY = fromTop ? 1 : -1;
+            const vy = dirY * Math.abs(Math.cos(angleOffset) * speed);
             const color = customColor || NEON_BALL_COLORS[this.balls.countActive() % NEON_BALL_COLORS.length];
 
+            const launcherPad = fromTop ? this.opponent : this.player;
             const baseX = customX !== null
                 ? customX
-                : (this.player && this.player.x
-                    ? this.player.x + (Math.random() - 0.5) * Math.min(80, this.player.width * 0.6)
+                : (launcherPad && launcherPad.x
+                    ? launcherPad.x + (Math.random() - 0.5) * Math.min(80, launcherPad.width * 0.6)
                     : this.arenaX + this.arenaWidth / 2);
             const spawnX = Math.max(
                 this.arenaX + 36,
                 Math.min(this.arenaX + this.arenaWidth - 36, baseX)
             );
 
-            // Spawns strictly BEHIND the player paddle:
-            // Player paddle is at this.player.y (arenaY + arenaHeight - PADDLE_Y_OFFSET).
-            // Bottom edge of paddle is player.y + player.height / 2.
-            // Spawning below that (towards arena bottom edge) places the ball behind the paddle.
-            // As vy is negative, it shoots upward, crosses the paddle line cleanly and enters the field.
-            const paddleBottom = this.player ? (this.player.y + this.player.height / 2) : (this.arenaY + this.arenaHeight - 33);
-            const spawnY = Math.min(
-                this.arenaY + this.arenaHeight - 10,
-                paddleBottom + CFG.BALL_RADIUS + 8
-            );
+            let spawnY;
+            if (fromTop) {
+                const padTop = this.opponent ? (this.opponent.y - this.opponent.height / 2) : (this.arenaY + 33);
+                spawnY = Math.max(this.arenaY + 10, padTop - CFG.BALL_RADIUS - 8);
+            } else {
+                const paddleBottom = this.player ? (this.player.y + this.player.height / 2) : (this.arenaY + this.arenaHeight - 33);
+                spawnY = Math.min(this.arenaY + this.arenaHeight - 10, paddleBottom + CFG.BALL_RADIUS + 8);
+            }
 
             const b = this.balls.spawn(spawnX, spawnY, vx, vy, color);
             if (b) {
                 this.particles.shockwave(spawnX, spawnY, color, 44);
                 this.particles.burst(spawnX, spawnY, 14, color, 60, 220, 3.2);
 
-                // Add upward launch thruster sparks
                 for (let p = 0; p < 6; p++) {
                     this.particles.spawn(
                         spawnX + (Math.random() - 0.5) * 8,
                         spawnY,
                         (Math.random() - 0.5) * 50,
-                        -90 - Math.random() * 140,
+                        dirY * (90 + Math.random() * 140),
                         color,
                         3.0,
                         0.32
@@ -666,11 +665,7 @@ window.PWONYX = window.PWONYX || {};
             ];
 
             this.barrageQueue = [];
-            let baseSpeed = this.mode.baseBallSpeed;
-            if (this.mode.isSurvival) {
-                const survivalRatio = Math.min(1, this.elapsedTime / 90);
-                baseSpeed = 300 + survivalRatio * (this.mode.maxBallSpeed - 300) * 0.75;
-            }
+            const baseSpeed = this.getSurvivalBaseSpeed();
             const launchSpeed = Math.min(
                 this.mode.maxBallSpeed * CFG.SPEED_SCALE * 0.96,
                 Math.max(360, baseSpeed * CFG.SPEED_SCALE * 1.15)
@@ -722,10 +717,6 @@ window.PWONYX = window.PWONYX || {};
             if (Audio && Audio.playScoreGoal) {
                 Audio.playScoreGoal();
             }
-        }
-
-        spawnBallInCenter() {
-            this.spawnBallFromBottom();
         }
 
         fireGhostPaddle(owner) {
@@ -976,11 +967,12 @@ window.PWONYX = window.PWONYX || {};
                 this.triggerBallBarrage(null, 'dynamic_drop');
             }
 
-            // Ensure active balls match targetBallCount (always spawning upward from behind the paddle!)
+            // Ensure active balls match targetBallCount (alternating top/bottom in 2P Versus mode)
             // Only refill when not actively launching a barrage sequence
             const activeBallCount = this.balls.countActive();
             if (activeBallCount < this.targetBallCount && this.barrageQueue.length === 0) {
-                this.spawnBallFromBottom();
+                const fromTop = this.mode.isTwoPlayer ? (this.versusSpawnToggle = !this.versusSpawnToggle) : false;
+                this.spawnBallFromBottom(null, null, null, null, fromTop);
             }
 
             // Update 4-Stem Audio Engine with current active ball count
@@ -1047,15 +1039,12 @@ window.PWONYX = window.PWONYX || {};
                 const intervalScale = 1 + progressRatio * 0.42;
                 this.ammoSpawnTimer = (baseAmmoInterval * intervalScale + Math.random() * 1.6) * freqMult;
 
-                // Spawn strictly 1 single ammo item at a time!
+                // Spawn strictly 1 single ammo item at a time (in 2P Versus, spawn mid-court going toward P1 or P2)
                 const spawnX = this.arenaX + 80 + Math.random() * (this.arenaWidth - 160);
-                const spawnY = this.arenaY + 70;
-                this.powerups.spawn(
-                    spawnX,
-                    spawnY,
-                    115 + Math.random() * 40,
-                    'ammo'
-                );
+                const toP2 = this.mode.isTwoPlayer && Math.random() < 0.5;
+                const spawnY = this.mode.isTwoPlayer ? (this.arenaY + this.arenaHeight * 0.5) : (this.arenaY + 70);
+                const vy = (toP2 ? -1 : 1) * (115 + Math.random() * 40);
+                this.powerups.spawn(spawnX, spawnY, vy, 'ammo');
                 this.particles.shockwave(spawnX, spawnY, '#00f5d4', 32);
             }
 
@@ -1082,10 +1071,13 @@ window.PWONYX = window.PWONYX || {};
 
                     const types = ['wide', 'slow', 'sticky', 'overdrive'];
                     const pick = types[Math.floor(Math.random() * types.length)];
+                    const toP2 = this.mode.isTwoPlayer && Math.random() < 0.5;
+                    const spawnY = this.mode.isTwoPlayer ? (this.arenaY + this.arenaHeight * 0.5) : (this.arenaY + 75);
+                    const vy = (toP2 ? -1 : 1) * (100 + Math.random() * 35);
                     this.powerups.spawn(
                         this.arenaX + 90 + Math.random() * (this.arenaWidth - 180),
-                        this.arenaY + 75,
-                        100 + Math.random() * 35,
+                        spawnY,
+                        vy,
                         pick
                     );
                 }
@@ -1111,21 +1103,29 @@ window.PWONYX = window.PWONYX || {};
 
                 if (p.x < this.arenaX + 25 || p.x > this.arenaX + this.arenaWidth - 25) p.vx *= -1;
 
-                // Check collection by Player 1 paddle
+                // Check collection by Player 1 paddle (or Player 2 in 2P Versus mode)
                 if (
                     Math.abs(p.y - this.player.y) <= p.radius + this.player.height &&
                     Math.abs(p.x - this.player.x) <= halfP1 + p.radius
                 ) {
-                    this.collectPowerUp(p);
+                    this.collectPowerUp(p, 'player1');
                     p.active = false;
-                } else if (p.y > this.arenaY + this.arenaHeight + 20) {
+                } else if (
+                    this.mode.isTwoPlayer &&
+                    Math.abs(p.y - this.opponent.y) <= p.radius + this.opponent.height &&
+                    Math.abs(p.x - this.opponent.x) <= halfP2 + p.radius
+                ) {
+                    this.collectPowerUp(p, 'player2');
+                    p.active = false;
+                } else if (p.y > this.arenaY + this.arenaHeight + 20 || p.y < this.arenaY - 20) {
                     p.active = false;
                 }
             }
 
-            // --- Update Balls (with sub-stepping for precision) ---
+            // --- Update Balls (True Anti-Tunneling Sub-Stepping + Damped Magnus Physics) ---
             const slowMult = this.buffs.slow > 0 ? 0.54 : 1.0;
             const curveUpgrade = 1 + (this.upgrades.curvePower || 0) * 0.18;
+            const maxAllowedSpeed = this.mode.maxBallSpeed * CFG.SPEED_SCALE * 1.15;
 
             for (let i = 0; i < this.balls.size; i++) {
                 const b = this.balls.items[i];
@@ -1140,155 +1140,172 @@ window.PWONYX = window.PWONYX || {};
                     b.vx += pull * dt;
                 }
 
-                // Magnus Curve (Spin) effect in flight
-                if (Math.abs(b.spin) > 0.01) {
-                    b.vx += b.spin * dt * slowMult;
-                }
+                // Determine sub-steps based on travel distance so fast balls never tunnel past thin paddles
+                const totalTravel = Math.hypot(b.vx, b.vy) * dt * slowMult;
+                const subSteps = Math.max(1, Math.min(6, Math.ceil(totalTravel / 10)));
+                const subDt = dt / subSteps;
 
-                b.x += b.vx * dt * slowMult;
-                b.y += b.vy * dt * slowMult;
+                for (let step = 0; step < subSteps && b.active; step++) {
+                    // Magnus Curve (Spin) effect in flight with realistic air decay
+                    if (Math.abs(b.spin) > 0.01) {
+                        b.vx += b.spin * subDt * slowMult;
+                        b.spin *= Math.pow(0.55, subDt);
+                    }
 
-                // Left / Right Arena Wall Bounce
-                if (b.x - b.radius < this.arenaX + 6) {
-                    b.x = this.arenaX + 6 + b.radius;
-                    b.vx = Math.abs(b.vx);
-                    this.particles.burst(b.x, b.y, 6, b.color, 40, 140, 2);
-                    Audio.playBounce(0.9, false);
-                } else if (b.x + b.radius > this.arenaX + this.arenaWidth - 6) {
-                    b.x = this.arenaX + this.arenaWidth - 6 - b.radius;
-                    b.vx = -Math.abs(b.vx);
-                    this.particles.burst(b.x, b.y, 6, b.color, 40, 140, 2);
-                    Audio.playBounce(0.9, false);
-                }
+                    // Clamp total speed so spin acceleration never exceeds physical limits
+                    const curSpd = Math.hypot(b.vx, b.vy);
+                    if (curSpd > maxAllowedSpeed) {
+                        const scale = maxAllowedSpeed / curSpd;
+                        b.vx *= scale;
+                        b.vy *= scale;
+                    }
 
-                // Ghost Paddle Interception
-                for (let gIdx = 0; gIdx < this.ghosts.size; gIdx++) {
-                    const g = this.ghosts.items[gIdx];
-                    if (!g.active) continue;
-                    if (g.owner === 'player1' && b.vy > 0) {
-                        if (
-                            Math.abs(b.y - g.y) <= b.radius + g.height &&
-                            Math.abs(b.x - g.x) <= g.width / 2 + b.radius
-                        ) {
-                            b.vy = -Math.abs(b.vy) * 1.06;
-                            b.y = g.y - g.height - b.radius;
-                            g.hitsRemaining--;
-                            this.particles.shockwave(b.x, b.y, '#00f5d4', 42);
-                            this.particles.burst(b.x, b.y, 14, '#00f5d4', 70, 230, 3);
-                            this.texts.spawn(b.x, b.y, 'GHOST SAVE!', '#00f5d4', 13, 0.7);
-                            Audio.playBounce(1.35, false);
+                    b.x += b.vx * subDt * slowMult;
+                    b.y += b.vy * subDt * slowMult;
+
+                    // Left / Right Arena Wall Bounce (with spin dampening)
+                    if (b.x - b.radius < this.arenaX + 6) {
+                        b.x = this.arenaX + 6 + b.radius;
+                        b.vx = Math.abs(b.vx);
+                        b.spin *= -0.5;
+                        this.particles.burst(b.x, b.y, 6, b.color, 40, 140, 2);
+                        Audio.playBounce(0.9, false);
+                    } else if (b.x + b.radius > this.arenaX + this.arenaWidth - 6) {
+                        b.x = this.arenaX + this.arenaWidth - 6 - b.radius;
+                        b.vx = -Math.abs(b.vx);
+                        b.spin *= -0.5;
+                        this.particles.burst(b.x, b.y, 6, b.color, 40, 140, 2);
+                        Audio.playBounce(0.9, false);
+                    }
+
+                    // Ghost Paddle Interception
+                    for (let gIdx = 0; gIdx < this.ghosts.size; gIdx++) {
+                        const g = this.ghosts.items[gIdx];
+                        if (!g.active) continue;
+                        if (g.owner === 'player1' && b.vy > 0 && this.interceptBallWithGhost(b, g, -1, '#00f5d4', 'GHOST SAVE!')) {
                             if (this.callbacks.onGhostIntercept) this.callbacks.onGhostIntercept();
                             break;
                         }
-                    } else if (g.owner === 'player2' && b.vy < 0) {
-                        if (
-                            Math.abs(b.y - g.y) <= b.radius + g.height &&
-                            Math.abs(b.x - g.x) <= g.width / 2 + b.radius
-                        ) {
-                            b.vy = Math.abs(b.vy) * 1.06;
-                            b.y = g.y + g.height + b.radius;
-                            g.hitsRemaining--;
-                            this.particles.shockwave(b.x, b.y, '#ff007f', 42);
-                            Audio.playBounce(1.35, false);
+                        if (g.owner === 'player2' && b.vy < 0 && this.interceptBallWithGhost(b, g, 1, '#ff007f', null)) {
                             break;
                         }
                     }
-                }
 
-                // Player 1 (Bottom) Paddle Collision
-                const p1Top = this.player.y - this.player.height / 2;
-                if (
-                    b.vy > 0 &&
-                    b.y + b.radius >= p1Top &&
-                    b.y - b.radius <= this.player.y + this.player.height &&
-                    Math.abs(b.x - this.player.x) <= halfP1 + b.radius + 3
-                ) {
-                    this.handlePaddleBounce(b, this.player, -1, curveUpgrade);
-                    this.playerHits++;
-                }
-
-                // Opponent (Top) Paddle Collision
-                const p2Bottom = this.opponent.y + this.opponent.height / 2;
-                if (
-                    b.vy < 0 &&
-                    b.y - b.radius <= p2Bottom &&
-                    b.y + b.radius >= this.opponent.y - this.opponent.height &&
-                    Math.abs(b.x - this.opponent.x) <= halfP2 + b.radius + 3
-                ) {
-                    this.handlePaddleBounce(b, this.opponent, 1, 1.0);
-                }
-
-                // --- Check Goal Scored at Top (Opponent Missed!) ---
-                if (b.y < this.arenaY - b.radius) {
-                    b.active = false;
-                    this.aiMisses++;
-                    const overdriveMult = this.buffs.overdrive > 0 ? 2 : 1;
-                    const curveBonus = b.isCurvedShot ? 1.5 : 1.0;
-                    const pts = Math.round(25 * this.mode.scoreMultiplier * overdriveMult * curveBonus);
-                    this.score += pts;
-
-                    if (this.mode.isSurvival) {
-                        this.survivalHealth = Math.min(100, this.survivalHealth + 2.5);
+                    // Player 1 (Bottom) Paddle Collision
+                    const p1Top = this.player.y - this.player.height / 2;
+                    if (
+                        b.vy > 0 &&
+                        b.y + b.radius >= p1Top &&
+                        b.y - b.radius <= this.player.y + this.player.height &&
+                        Math.abs(b.x - this.player.x) <= halfP1 + b.radius + 3
+                    ) {
+                        this.handlePaddleBounce(b, this.player, -1, curveUpgrade);
+                        this.playerHits++;
                     }
 
-                    this.particles.burst(b.x, this.arenaY + 12, 22, '#00f5d4', 80, 280, 3.5);
-                    this.particles.shockwave(b.x, this.arenaY + 12, '#00f5d4', 65);
-                    this.texts.spawn(
-                        Math.max(this.arenaX + 50, Math.min(this.arenaX + this.arenaWidth - 50, b.x)),
-                        this.arenaY + 38,
-                        b.isCurvedShot ? `+${pts} CURVE!` : `+${pts}`,
-                        b.isCurvedShot ? '#fee440' : '#00f5d4',
-                        16,
-                        0.85
-                    );
-                    Audio.playScoreGoal();
-
-                    if (b.isCurvedShot && this.callbacks.onCurveGoal) {
-                        this.callbacks.onCurveGoal();
-                    }
-                    this.updateDominationRating();
-                }
-
-                // --- Check Ball Missed at Bottom (Player Missed!) ---
-                if (b.y > this.arenaY + this.arenaHeight + b.radius) {
-                    b.active = false;
-                    this.playerMisses++;
-
-                    // Pwong 2 Dynamic Penalty Scaling:
-                    // The more balls on screen, the less an individual miss penalizes you!
-                    const activeNow = Math.max(1, currentBalls);
-                    const scaleFactor = 1 / Math.pow(activeNow, 0.65);
-                    const rawPenalty = Math.max(3, Math.round(32 * scaleFactor * this.mode.scoreMultiplier));
-                    this.score = Math.max(0, this.score - rawPenalty);
-
-                    this.screenShake = Math.min(10, 4 + 8 * scaleFactor);
-                    this.chromaticFlash = 0.7;
-                    this.particles.burst(b.x, this.arenaY + this.arenaHeight - 10, 20, '#ff0055', 70, 250, 3.5);
-                    this.texts.spawn(
-                        Math.max(this.arenaX + 50, Math.min(this.arenaX + this.arenaWidth - 50, b.x)),
-                        this.arenaY + this.arenaHeight - 38,
-                        `-${rawPenalty}`,
-                        '#ff0055',
-                        16,
-                        0.8
-                    );
-                    Audio.playMissPenalty();
-
-                    if (this.mode.isSurvival) {
-                        const hpLoss = 14 * scaleFactor;
-                        this.survivalHealth = Math.max(0, this.survivalHealth - hpLoss);
-                        if (this.survivalHealth <= 0) {
-                            this.finishMatch(false);
-                            return;
-                        }
+                    // Opponent (Top) Paddle Collision
+                    const p2Bottom = this.opponent.y + this.opponent.height / 2;
+                    if (
+                        b.vy < 0 &&
+                        b.y - b.radius <= p2Bottom &&
+                        b.y + b.radius >= this.opponent.y - this.opponent.height &&
+                        Math.abs(b.x - this.opponent.x) <= halfP2 + b.radius + 3
+                    ) {
+                        this.handlePaddleBounce(b, this.opponent, 1, 1.0);
                     }
 
-                    this.updateDominationRating();
+                    // --- Check Goal Scored at Top or Ball Missed at Bottom ---
+                    if (b.y < this.arenaY - b.radius) {
+                        this.handleGoalScored(b);
+                    } else if (b.y > this.arenaY + this.arenaHeight + b.radius) {
+                        if (this.handlePlayerMissed(b, currentBalls)) return;
+                    }
                 }
             }
 
             this.updateParticles(dt);
             this.updateFloatingTexts(dt);
+        }
+
+        interceptBallWithGhost(ball, ghost, normalDirY, color, label) {
+            if (
+                Math.abs(ball.y - ghost.y) > ball.radius + ghost.height ||
+                Math.abs(ball.x - ghost.x) > ghost.width / 2 + ball.radius
+            ) {
+                return false;
+            }
+            ball.vy = normalDirY * Math.abs(ball.vy) * 1.06;
+            ball.y = ghost.y + normalDirY * (ghost.height + ball.radius);
+            ghost.hitsRemaining--;
+            this.particles.shockwave(ball.x, ball.y, color, 42);
+            if (label) {
+                this.particles.burst(ball.x, ball.y, 14, color, 70, 230, 3);
+                this.texts.spawn(ball.x, ball.y, label, color, 13, 0.7);
+            }
+            Audio.playBounce(1.35, false);
+            return true;
+        }
+
+        handleGoalScored(b) {
+            b.active = false;
+            this.aiMisses++;
+            const overdriveMult = this.buffs.overdrive > 0 ? 2 : 1;
+            const curveBonus = b.isCurvedShot ? 1.5 : 1.0;
+            const pts = Math.round(25 * this.mode.scoreMultiplier * overdriveMult * curveBonus);
+            this.score += pts;
+
+            if (this.mode.isSurvival) {
+                this.survivalHealth = Math.min(100, this.survivalHealth + 2.5);
+            }
+
+            const fxX = Math.max(this.arenaX + 50, Math.min(this.arenaX + this.arenaWidth - 50, b.x));
+            this.particles.burst(b.x, this.arenaY + 12, 22, '#00f5d4', 80, 280, 3.5);
+            this.particles.shockwave(b.x, this.arenaY + 12, '#00f5d4', 65);
+            this.texts.spawn(
+                fxX,
+                this.arenaY + 38,
+                b.isCurvedShot ? `+${pts} CURVE!` : `+${pts}`,
+                b.isCurvedShot ? '#fee440' : '#00f5d4',
+                16,
+                0.85
+            );
+            Audio.playScoreGoal();
+
+            if (b.isCurvedShot && this.callbacks.onCurveGoal) {
+                this.callbacks.onCurveGoal();
+            }
+            this.updateDominationRating();
+        }
+
+        handlePlayerMissed(b, currentBalls) {
+            b.active = false;
+            this.playerMisses++;
+
+            // Pwong 2 Dynamic Penalty Scaling:
+            // The more balls on screen, the less an individual miss penalizes you!
+            const activeNow = Math.max(1, currentBalls);
+            const scaleFactor = 1 / Math.pow(activeNow, 0.65);
+            const rawPenalty = Math.max(3, Math.round(32 * scaleFactor * this.mode.scoreMultiplier));
+            this.score = Math.max(0, this.score - rawPenalty);
+
+            this.screenShake = Math.min(10, 4 + 8 * scaleFactor);
+            this.chromaticFlash = 0.7;
+            const fxX = Math.max(this.arenaX + 50, Math.min(this.arenaX + this.arenaWidth - 50, b.x));
+            this.particles.burst(b.x, this.arenaY + this.arenaHeight - 10, 20, '#ff0055', 70, 250, 3.5);
+            this.texts.spawn(fxX, this.arenaY + this.arenaHeight - 38, `-${rawPenalty}`, '#ff0055', 16, 0.8);
+            Audio.playMissPenalty();
+
+            if (this.mode.isSurvival) {
+                const hpLoss = 14 * scaleFactor;
+                this.survivalHealth = Math.max(0, this.survivalHealth - hpLoss);
+                if (this.survivalHealth <= 0) {
+                    this.finishMatch(false);
+                    return true;
+                }
+            }
+
+            this.updateDominationRating();
+            return false;
         }
 
         handlePaddleBounce(ball, paddle, dirY, curveMult) {
@@ -1387,10 +1404,11 @@ window.PWONYX = window.PWONYX || {};
             return typeof this.mode.ammoPerPickup === 'number' ? this.mode.ammoPerPickup : 10;
         }
 
-        collectPowerUp(p) {
+        collectPowerUp(p, collector = 'player1') {
             const mastLevel = this.upgrades.powerupDuration || 0;
             const durMult = 1 + mastLevel * 0.15;
             const def = CFG.POWERUPS[p.type] || CFG.POWERUPS.ammo;
+            const targetPad = collector === 'player2' ? this.opponent : this.player;
 
             this.particles.shockwave(p.x, p.y, def.color, 60);
             this.particles.burst(p.x, p.y, 20, def.color, 70, 240, 3.5);
@@ -1398,10 +1416,11 @@ window.PWONYX = window.PWONYX || {};
 
             if (p.type === 'ammo') {
                 const gain = this.getCurrentAmmoPickupAmount();
-                this.player.ghostAmmo = Math.min(this.player.maxGhostAmmo, this.player.ghostAmmo + gain);
-                this.texts.spawn(p.x, p.y - 16, `+${gain} GHOST AMMO!`, def.color, 16, 1.0);
+                const maxAmmo = targetPad.maxGhostAmmo || 99;
+                targetPad.ghostAmmo = Math.min(maxAmmo, targetPad.ghostAmmo + gain);
+                this.texts.spawn(p.x, p.y + (collector === 'player2' ? 18 : -16), `+${gain} GHOST AMMO!`, def.color, 16, 1.0);
             } else {
-                this.texts.spawn(p.x, p.y - 16, def.label, def.color, 16, 1.0);
+                this.texts.spawn(p.x, p.y + (collector === 'player2' ? 18 : -16), def.label, def.color, 16, 1.0);
                 if (p.type === 'wide') {
                     this.buffs.wide = def.baseDuration * durMult;
                     this.recalculatePaddleStats();
@@ -1646,55 +1665,36 @@ window.PWONYX = window.PWONYX || {};
         }
 
         renderFlowParticleLayer(ctx, layerIndex, offsetX, offsetY, vw, vh, time, kickEnergy, fadeAlpha = 1) {
-            if (!this.flowParticles) return;
+            if (!this.flowParticles || !this.flowSprites) return;
             ctx.save();
+            const dimScale = Math.min(vw, vh) / 768;
             for (let i = 0; i < this.flowParticles.length; i++) {
                 const p = this.flowParticles[i];
                 if (p.layer !== layerIndex) continue;
 
                 const px = p.nx * vw - offsetX;
                 const py = p.ny * vh - offsetY;
-                const r = Math.max(0.5, p.r * (Math.min(vw, vh) / 768));
+                const r = Math.max(0.5, p.r * dimScale);
                 const twinkle = 0.78 + 0.22 * Math.sin(time * 1.7 + p.phase);
                 const alpha = Math.min(1, p.alpha * twinkle * fadeAlpha);
 
                 if (p.isDark) {
-                    // Out-of-focus dark silhouette dust/fragments (signature Creo - Flow depth cue)
                     const aspect = p.aspect || 0.65;
                     const angle = (p.angle || 0) + time * 0.08;
-                    const dg = ctx.createRadialGradient(px, py, r * 0.1, px, py, r * 1.35);
-                    dg.addColorStop(0, `rgba(2, 7, 13, ${alpha})`);
-                    dg.addColorStop(0.58, `rgba(5, 14, 24, ${alpha * 0.65})`);
-                    dg.addColorStop(1, 'rgba(5, 14, 24, 0)');
-                    ctx.fillStyle = dg;
-                    ctx.beginPath();
-                    ctx.ellipse(
-                        px,
-                        py,
-                        r * 1.35,
-                        r * 1.35 * aspect,
-                        angle,
-                        0,
-                        Math.PI * 2
-                    );
-                    ctx.fill();
+                    const size = r * 2.7;
+                    ctx.save();
+                    ctx.translate(px, py);
+                    ctx.rotate(angle);
+                    ctx.scale(1, aspect);
+                    ctx.globalAlpha = alpha;
+                    ctx.drawImage(this.flowSprites.dark, -size * 0.5, -size * 0.5, size, size);
+                    ctx.restore();
                 } else {
-                    // Soft cyan/white space dust & bokeh
                     const boost = layerIndex === 2 ? kickEnergy * 0.18 : 0;
-                    const lg = ctx.createRadialGradient(px, py, 0, px, py, r * 2.2);
-                    if (p.isBokeh) {
-                        lg.addColorStop(0, `rgba(240, 252, 255, ${Math.min(1, alpha + boost)})`);
-                        lg.addColorStop(0.42, `rgba(145, 224, 255, ${(alpha + boost) * 0.45})`);
-                        lg.addColorStop(1, 'rgba(70, 175, 235, 0)');
-                    } else {
-                        lg.addColorStop(0, `rgba(150, 228, 255, ${Math.min(1, alpha + boost)})`);
-                        lg.addColorStop(0.48, `rgba(65, 165, 225, ${(alpha + boost) * 0.4})`);
-                        lg.addColorStop(1, 'rgba(25, 95, 155, 0)');
-                    }
-                    ctx.fillStyle = lg;
-                    ctx.beginPath();
-                    ctx.arc(px, py, r * 2.2, 0, Math.PI * 2);
-                    ctx.fill();
+                    const sprite = p.isBokeh ? this.flowSprites.bokeh : this.flowSprites.glow;
+                    const size = r * 4.4;
+                    ctx.globalAlpha = Math.min(1, alpha + boost);
+                    ctx.drawImage(sprite, px - size * 0.5, py - size * 0.5, size, size);
                 }
             }
             ctx.restore();
@@ -2185,25 +2185,27 @@ window.PWONYX = window.PWONYX || {};
             ctx.roundRect(x + 6, y + 3, pad.width - 12, pad.height - 6, 4);
             ctx.fill();
 
-            // Draw Ghost Paddle Ammo pips + numeric counter under Player 1 paddle
-            if (isPlayer && pad.ghostAmmo > 0) {
+            // Draw Ghost Paddle Ammo pips + numeric counter under P1 (or above P2 in 2P Versus)
+            if ((isPlayer || this.mode.isTwoPlayer) && pad.ghostAmmo > 0) {
                 const ammo = pad.ghostAmmo;
                 const visiblePips = Math.min(10, ammo);
                 const pipSpacing = 9;
                 const startX = pad.x - ((visiblePips - 1) * pipSpacing) / 2;
-                ctx.shadowColor = '#00f5d4';
+                const pipY = isPlayer ? pad.y + 15 : pad.y - 15;
+                const pipColor = isPlayer ? '#00f5d4' : '#ff007f';
+                ctx.shadowColor = pipColor;
                 ctx.shadowBlur = 6;
-                ctx.fillStyle = '#00f5d4';
+                ctx.fillStyle = pipColor;
                 for (let i = 0; i < visiblePips; i++) {
                     ctx.beginPath();
-                    ctx.arc(startX + i * pipSpacing, pad.y + 15, 2.8, 0, Math.PI * 2);
+                    ctx.arc(startX + i * pipSpacing, pipY, 2.8, 0, Math.PI * 2);
                     ctx.fill();
                 }
                 if (ammo > 10) {
                     ctx.font = "700 10px 'Orbitron', system-ui, sans-serif";
                     ctx.textAlign = 'left';
                     ctx.textBaseline = 'middle';
-                    ctx.fillText(`×${ammo}`, startX + visiblePips * pipSpacing + 4, pad.y + 15);
+                    ctx.fillText(`×${ammo}`, startX + visiblePips * pipSpacing + 4, pipY);
                 }
             }
 
@@ -2219,7 +2221,7 @@ window.PWONYX = window.PWONYX || {};
                 ctx.shadowColor = g.color;
                 ctx.shadowBlur = 18;
                 ctx.strokeStyle = g.color;
-                ctx.fillStyle = 'rgba(0, 245, 212, 0.25)';
+                ctx.fillStyle = g.owner === 'player2' ? 'rgba(255, 0, 127, 0.25)' : 'rgba(0, 245, 212, 0.25)';
                 ctx.lineWidth = 2.5;
 
                 ctx.beginPath();
