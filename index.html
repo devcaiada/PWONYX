@@ -26,7 +26,7 @@
             <div class="hud-fps hidden" id="hud-telemetry"></div>
         </div>
 
-        <!-- Menu (Creo - Flow Minimalist Organic Sci-Fi Style) -->
+        <!-- Menu (Minimalist Organic Sci-Fi Parallax) -->
         <div class="overlay" id="overlay-menu">
             <div class="flow-menu-center" id="flow-menu-center">
                 <h1 class="flow-title" id="flow-title">P W O N Y X</h1>
@@ -36,11 +36,22 @@
                 <button class="flow-play-btn" id="btn-start-match">
                     <span class="flow-play-text">P L A Y</span>
                 </button>
+                <button class="flow-mode-pill open-suno-btn" id="flow-mode-pill" title="Escolher modo de jogo">
+                    <span class="flow-mode-dot" id="flow-mode-dot"></span>
+                    <span id="flow-mode-label">MEDIUM</span>
+                </button>
             </div>
 
-            <button class="flow-gear-btn open-suno-btn" id="btn-settings-gear" title="Configurações" aria-label="Configurações">
-                <img src="assets/icons/icon-gear.png" alt="Configurações" class="pwonyx-icon" width="28" height="28" />
-            </button>
+            <div class="flow-hint" id="flow-hint">MOVA PARA EXPLORAR · CLIQUE PARA ÁUDIO</div>
+
+            <div class="flow-corner-actions">
+                <button class="flow-corner-btn flow-audio-btn" id="btn-menu-audio" title="Áudio / Mudo (M)" aria-label="Alternar áudio">
+                    <img src="assets/icons/icon-audio.png" alt="Áudio" class="pwonyx-icon" width="24" height="24" />
+                </button>
+                <button class="flow-corner-btn flow-gear-btn open-suno-btn" id="btn-settings-gear" title="Configurações" aria-label="Configurações">
+                    <img src="assets/icons/icon-gear.png" alt="Configurações" class="pwonyx-icon" width="26" height="26" />
+                </button>
+            </div>
         </div>
 
         <!-- Pause -->

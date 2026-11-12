@@ -135,6 +135,10 @@ window.PWONYX = window.PWONYX || {};
         const m = CFG.MODES[saveData.selectedMode];
         const best = saveData.highScores[m.id] || 0;
         $('mode-desc').textContent = `${m.subtitle}${best ? ` · Recorde ${best.toLocaleString('pt-BR')}` : ''}`;
+        const modeLabel = $('flow-mode-label');
+        const modeDot = $('flow-mode-dot');
+        if (modeLabel) modeLabel.textContent = m.name;
+        if (modeDot) modeDot.style.setProperty('--mode-color', m.color);
     }
 
     // ---------------- Shop ----------------
@@ -271,6 +275,7 @@ window.PWONYX = window.PWONYX || {};
             Audio.setTrack(e.target.value);
             saveData.settings.track = e.target.value;
             persistSave();
+            updateMenuAudioUI();
         });
 
         const tunnel = $('select-tunnel');
@@ -361,11 +366,40 @@ window.PWONYX = window.PWONYX || {};
         $('stage').classList.toggle('playing', id === null);
     }
 
+    const TRACK_LABELS = {
+        chaoz: 'CHAOZ FANTASY',
+        flow: 'FLOW · CREO STYLE',
+        popcorn: 'POPCORN SYNTH REMIX',
+        cyber: 'CYBER OVERDRIVE',
+        suno: 'CUSTOM STEMS'
+    };
+
+    function updateMenuAudioUI() {
+        const audioBtn = $('btn-menu-audio');
+        const hint = $('flow-hint');
+        if (audioBtn) audioBtn.classList.toggle('is-muted', !!Audio.isMuted);
+        if (hint) {
+            if (Audio.isMuted) {
+                hint.textContent = 'ÁUDIO SILENCIADO · M PARA REATIVAR';
+                hint.classList.remove('is-playing');
+            } else if (Audio.isPlaying) {
+                const trackName = TRACK_LABELS[Audio.currentTrack] || 'PWONYX AUDIO';
+                hint.textContent = `♪ ${trackName}`;
+                hint.classList.add('is-playing');
+            } else {
+                hint.textContent = 'MOVA PARA EXPLORAR · CLIQUE PARA ÁUDIO';
+                hint.classList.remove('is-playing');
+            }
+        }
+    }
+
     function goToMenu() {
         game.state = 'menu';
+        game.resetMenuIntro();
         Audio.setLowPassEffect('normal');
         renderModeSelector();
-        $('overlay-menu').classList.remove('fading');
+        updateMenuAudioUI();
+        $('overlay-menu').classList.remove('fading', 'play-hovered');
         showOverlay('overlay-menu');
     }
 
@@ -400,6 +434,7 @@ window.PWONYX = window.PWONYX || {};
         const muted = Audio.toggleMute();
         saveData.settings.muted = muted;
         persistSave();
+        updateMenuAudioUI();
         showToast(muted ? '🔇 Som desligado' : '🔊 Som ligado');
     }
 
@@ -417,9 +452,11 @@ window.PWONYX = window.PWONYX || {};
                 }
             },
             onTransitionStart: () => {
+                $('overlay-menu').classList.remove('play-hovered');
                 $('overlay-menu').classList.add('fading');
                 closeAllModals();
             },
+            onMenuAudioStarted: updateMenuAudioUI,
             onAchievement: (achId) => unlockAchievement(achId),
             onGhostIntercept: () => {
                 saveData.stats.ghostIntercepts++;
@@ -466,9 +503,34 @@ window.PWONYX = window.PWONYX || {};
         renderAchievementsList();
         setupMusicSettings();
         updateCreditsUI();
+        updateMenuAudioUI();
         showOverlay('overlay-menu');
 
-        $('btn-start-match').addEventListener('click', startMatch);
+        const startBtn = $('btn-start-match');
+        startBtn.addEventListener('click', startMatch);
+        startBtn.addEventListener('mouseenter', () => {
+            $('overlay-menu').classList.add('play-hovered');
+            game.setMenuPlayHover(true);
+        });
+        startBtn.addEventListener('mouseleave', () => {
+            $('overlay-menu').classList.remove('play-hovered');
+            game.setMenuPlayHover(false);
+        });
+        const menuAudioBtn = $('btn-menu-audio');
+        if (menuAudioBtn) {
+            menuAudioBtn.addEventListener('click', () => {
+                if (!Audio.isPlaying && !Audio.isMuted) {
+                    Audio.startMusic();
+                    Audio.setLowPassEffect('normal');
+                    Audio.updateAdaptiveLayers(4);
+                    game.flowClickPulse = 1.0;
+                    game.spawnMenuRipple(0, 0, Math.min(game.viewWidth, game.viewHeight) * 0.36, '#00f5d4', 1.15, true);
+                    updateMenuAudioUI();
+                } else {
+                    toggleMute();
+                }
+            });
+        }
         $('btn-play-again').addEventListener('click', startMatch);
         $('btn-back-menu').addEventListener('click', goToMenu);
         $('btn-pause-quit').addEventListener('click', goToMenu);
