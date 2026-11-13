@@ -22,7 +22,24 @@ window.PWONYX = window.PWONYX || {};
     let saveData = loadSaveData();
     let game = null;
     const $ = (id) => document.getElementById(id);
-    const hudCache = { score: '', balls: '', ammo: '', progressW: '', progressBg: '', buffsHtml: '' };
+    const hudCache = {
+        score: '',
+        balls: '',
+        ammo: '',
+        time: '',
+        combo: '',
+        comboVisible: false,
+        progressW: '',
+        progressBg: '',
+        buffsHtml: ''
+    };
+
+    function formatClock(sec) {
+        const s = Math.max(0, Math.floor(sec || 0));
+        const m = Math.floor(s / 60);
+        const rem = String(s % 60).padStart(2, '0');
+        return `${m}:${rem}`;
+    }
 
     function loadSaveData() {
         try {
@@ -318,6 +335,25 @@ window.PWONYX = window.PWONYX || {};
                 setCachedText('ammo', 'hud-ammo', String(game.player.ghostAmmo));
             }
 
+            const totalDur = game.matchDuration || game.mode.duration || 134;
+            const timeText = game.mode.isSurvival
+                ? `${formatClock(game.elapsedTime)} · ∞`
+                : `${formatClock(game.elapsedTime)} / ${formatClock(totalDur)}`;
+            setCachedText('time', 'hud-time', timeText);
+
+            const comboEl = $('hud-combo');
+            if (comboEl) {
+                const showCombo = (game.comboMultiplier || 1) > 1;
+                if (hudCache.comboVisible !== showCombo) {
+                    hudCache.comboVisible = showCombo;
+                    comboEl.classList.toggle('hidden', !showCombo);
+                }
+                if (showCombo) {
+                    const multStr = `${game.comboMultiplier.toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1')}× COMBO`;
+                    setCachedText('combo', 'hud-combo', multStr);
+                }
+            }
+
             const fill = $('hud-progress-fill');
             const progressW = game.mode.isSurvival ? `${game.survivalHealth.toFixed(1)}%` : `${game.progress.toFixed(1)}%`;
             const progressBg = (game.mode.isSurvival && game.survivalHealth < 30) ? '#ff0055' : '';
@@ -333,9 +369,10 @@ window.PWONYX = window.PWONYX || {};
             const b = game.buffs;
             const buffs = [];
             if (b.wide > 0) buffs.push(`<span class="buff" style="--c:#00bbf9"><img src="assets/icons/powerup-larger.png" alt="" class="pwonyx-icon buff-icon" /> ${b.wide.toFixed(0)}s</span>`);
-            if (b.slow > 0) buffs.push(`<span class="buff" style="--c:#fee440"><img src="assets/icons/powerup-slow.png" alt="" class="pwonyx-icon buff-icon" /> ${b.slow.toFixed(0)}s</span>`);
-            if (b.sticky > 0) buffs.push(`<span class="buff" style="--c:#f15bb5"><img src="assets/icons/powerup-sticky.png" alt="" class="pwonyx-icon buff-icon" /> ${b.sticky.toFixed(0)}s</span>`);
-            if (b.overdrive > 0) buffs.push(`<span class="buff" style="--c:#ff007f"><img src="assets/icons/powerup-overdrive.png" alt="" class="pwonyx-icon buff-icon" /> 2× ${b.overdrive.toFixed(0)}s</span>`);
+            if (b.slow > 0) buffs.push(`<span class="buff" style="--c:#ffd166"><img src="assets/icons/powerup-slow.png" alt="" class="pwonyx-icon buff-icon" /> ${b.slow.toFixed(0)}s</span>`);
+            if (b.sticky > 0) buffs.push(`<span class="buff" style="--c:#ff4da6"><img src="assets/icons/powerup-sticky.png" alt="" class="pwonyx-icon buff-icon" /> ${b.sticky.toFixed(0)}s</span>`);
+            if (b.overdrive > 0) buffs.push(`<span class="buff" style="--c:#ff6b35"><img src="assets/icons/powerup-overdrive.png" alt="" class="pwonyx-icon buff-icon" /> 2× ${b.overdrive.toFixed(0)}s</span>`);
+            if (b.shield > 0) buffs.push(`<span class="buff" style="--c:#2ec4b6"><img src="assets/icons/powerup-shield.png" alt="" class="pwonyx-icon buff-icon" /> ${game.shieldCharges || 1}🛡️ ${b.shield.toFixed(0)}s</span>`);
             const buffsHtml = buffs.join('');
             if (hudCache.buffsHtml !== buffsHtml) {
                 hudCache.buffsHtml = buffsHtml;

@@ -22,6 +22,8 @@ window.PWONYX = window.PWONYX || {};
                     radius: CFG.BALL_RADIUS,
                     color: '#00f5d4',
                     isCurvedShot: false,
+                    stuckTimer: 0,
+                    stuckOffsetX: 0,
                     // Previous-frame position: the trail is drawn as a segment px,py -> x,y
                     px: 0,
                     py: 0
@@ -44,6 +46,8 @@ window.PWONYX = window.PWONYX || {};
                     b.radius = CFG.BALL_RADIUS;
                     b.color = color || '#00f5d4';
                     b.isCurvedShot = false;
+                    b.stuckTimer = 0;
+                    b.stuckOffsetX = 0;
                     return b;
                 }
             }
