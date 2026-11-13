@@ -206,12 +206,19 @@ window.PWONYX = window.PWONYX || {};
 
             // Built-in MP3 Track ("assets/musics/Chaoz Fantasy.mp3")
             this.chaozUrl = 'assets/musics/Chaoz Fantasy.mp3';
+            this.chaozDuration = 133.9;
             this.chaozBuffer = null;
             this.chaozSource = null;
             this.chaozMediaEl = null;
             this.chaozLoading = false;
             this.chaozStartTime = 0;
             this.chaozPlaying = false;
+
+            // Pause-aware track clock state
+            this._pauseStartedCtxTime = null;
+            this._pausedMediaTime = null;
+            this.totalPausedDuration = 0;
+            this._isGamePaused = false;
 
             // 4 Stem GainNodes + Analysers for visual meters
             this.stemGains = {};
@@ -396,6 +403,9 @@ window.PWONYX = window.PWONYX || {};
                     if (res.ok) {
                         const arr = await res.arrayBuffer();
                         this.chaozBuffer = await this.ctx.decodeAudioData(arr);
+                        if (this.chaozBuffer && this.chaozBuffer.duration > 10) {
+                            this.chaozDuration = this.chaozBuffer.duration;
+                        }
                         this.chaozLoading = false;
                         if (this.isPlaying && this.currentTrack === 'chaoz') {
                             this.startChaozTrack();
@@ -413,6 +423,11 @@ window.PWONYX = window.PWONYX || {};
                 this.chaozMediaEl = new window.Audio(this.chaozUrl);
                 this.chaozMediaEl.loop = true;
                 this.chaozMediaEl.volume = this.isMuted ? 0 : 0.78;
+                this.chaozMediaEl.addEventListener('loadedmetadata', () => {
+                    if (Number.isFinite(this.chaozMediaEl.duration) && this.chaozMediaEl.duration > 10) {
+                        this.chaozDuration = this.chaozMediaEl.duration;
+                    }
+                });
                 try {
                     if (window.location && window.location.protocol !== 'file:') {
                         const mediaSrc = this.ctx.createMediaElementSource(this.chaozMediaEl);
@@ -461,6 +476,10 @@ window.PWONYX = window.PWONYX || {};
             this.buildUpCharge = 0;
             this.dynamicDropTriggered = false;
             this.lastDynamicDropTime = 0;
+            this._pauseStartedCtxTime = null;
+            this._pausedMediaTime = null;
+            this.totalPausedDuration = 0;
+            this._isGamePaused = false;
 
             if (this.currentTrack === 'chaoz') {
                 this.startChaozTrack();
@@ -657,10 +676,28 @@ window.PWONYX = window.PWONYX || {};
             q.setValueAtTime(q.value, now);
 
             if (mode === 'paused') {
+                if (!this._isGamePaused) {
+                    this._isGamePaused = true;
+                    this._pauseStartedCtxTime = this.ctx ? this.ctx.currentTime : 0;
+                    if (this.chaozMediaEl && this.chaozPlaying) {
+                        this._pausedMediaTime = this.chaozMediaEl.currentTime;
+                    }
+                }
                 freq.exponentialRampToValueAtTime(380, now + 0.18);
                 q.linearRampToValueAtTime(4.0, now + 0.18);
                 if (this.chaozMediaEl && !this.isMuted) this.chaozMediaEl.volume = 0.25;
             } else if (mode === 'slowmo') {
+                if (this._isGamePaused) {
+                    this._isGamePaused = false;
+                    if (this.ctx && this._pauseStartedCtxTime !== null) {
+                        this.totalPausedDuration += Math.max(0, this.ctx.currentTime - this._pauseStartedCtxTime);
+                        this._pauseStartedCtxTime = null;
+                    }
+                    if (this.chaozMediaEl && this.chaozPlaying && this._pausedMediaTime !== null) {
+                        try { this.chaozMediaEl.currentTime = this._pausedMediaTime; } catch (e) {}
+                        this._pausedMediaTime = null;
+                    }
+                }
                 freq.exponentialRampToValueAtTime(680, now + 0.15);
                 q.linearRampToValueAtTime(3.2, now + 0.15);
                 if (this.chaozMediaEl && !this.isMuted) this.chaozMediaEl.volume = 0.45;
@@ -670,6 +707,17 @@ window.PWONYX = window.PWONYX || {};
                 freq.exponentialRampToValueAtTime(19500, now + 0.38);
             } else {
                 // 'normal'
+                if (this._isGamePaused) {
+                    this._isGamePaused = false;
+                    if (this.ctx && this._pauseStartedCtxTime !== null) {
+                        this.totalPausedDuration += Math.max(0, this.ctx.currentTime - this._pauseStartedCtxTime);
+                        this._pauseStartedCtxTime = null;
+                    }
+                    if (this.chaozMediaEl && this.chaozPlaying && this._pausedMediaTime !== null) {
+                        try { this.chaozMediaEl.currentTime = this._pausedMediaTime; } catch (e) {}
+                        this._pausedMediaTime = null;
+                    }
+                }
                 freq.exponentialRampToValueAtTime(20000, now + 0.2);
                 q.linearRampToValueAtTime(1.2, now + 0.2);
                 if (this.chaozMediaEl && !this.isMuted) this.chaozMediaEl.volume = 0.78;
@@ -1020,23 +1068,56 @@ window.PWONYX = window.PWONYX || {};
         }
 
         /**
+         * Returns the full duration (seconds) of the active track so matches run for the song length.
+         */
+        getTrackDuration(fallback = 134) {
+            if (this.currentTrack === 'chaoz') {
+                return this.chaozDuration || 133.9;
+            }
+            if (this.currentTrack === 'suno' && this.hasAnyCustomStems()) {
+                let maxDur = 0;
+                STEM_KEYS.forEach((k) => {
+                    if (this.customBuffers[k] && this.customBuffers[k].duration > maxDur) {
+                        maxDur = this.customBuffers[k].duration;
+                    }
+                });
+                if (maxDur > 0) {
+                    if (maxDur < 45) {
+                        const loops = Math.max(2, Math.round(120 / maxDur));
+                        return maxDur * loops;
+                    }
+                    return maxDur;
+                }
+            }
+            return fallback || 134;
+        }
+
+        /**
          * Returns the true audible playback time of the current track.
-         * Never returns elapsed game time while an audio file is still loading.
+         * Never returns elapsed game time while an audio file is still loading,
+         * and stays synchronized across pauses.
          */
         getTrackCurrentTime() {
             if (!this.isPlaying) return 0;
+            const livePausedDelta = (this._isGamePaused && this.ctx && this._pauseStartedCtxTime !== null)
+                ? Math.max(0, this.ctx.currentTime - this._pauseStartedCtxTime)
+                : 0;
+            const pausedOffset = this.totalPausedDuration + livePausedDelta;
+
             if (this.currentTrack === 'chaoz') {
                 if (this.chaozMediaEl && this.chaozPlaying && this.chaozMediaEl.currentTime > 0) {
-                    return this.chaozMediaEl.currentTime;
+                    return this._isGamePaused && this._pausedMediaTime !== null
+                        ? this._pausedMediaTime
+                        : this.chaozMediaEl.currentTime;
                 }
                 if (this.chaozSource && this.chaozPlaying && this.ctx && this.chaozStartTime > 0) {
-                    const dur = this.chaozBuffer ? this.chaozBuffer.duration : 134;
-                    return Math.max(0, (this.ctx.currentTime - this.chaozStartTime) % dur);
+                    const dur = this.chaozDuration || (this.chaozBuffer ? this.chaozBuffer.duration : 133.9);
+                    return Math.max(0, (this.ctx.currentTime - this.chaozStartTime - pausedOffset) % dur);
                 }
                 return 0; // Still loading buffer — do not advance checkpoints prematurely!
             }
             if (this.currentTrack === 'suno' && this.hasAnyCustomStems() && this.ctx && this.customStartTime > 0) {
-                return Math.max(0, this.ctx.currentTime - this.customStartTime);
+                return Math.max(0, this.ctx.currentTime - this.customStartTime - pausedOffset);
             }
             return this.musicElapsed;
         }
@@ -1067,7 +1148,7 @@ window.PWONYX = window.PWONYX || {};
         updateAnalysis(dt) {
             this.beatPulse = Math.max(0, this.beatPulse - dt * 4.5);
             this.beatCooldown = Math.max(0, this.beatCooldown - dt);
-            if (this.isPlaying) {
+            if (this.isPlaying && !this._isGamePaused) {
                 this.musicElapsed += dt;
             }
             if (!this.isInitialized || !this.analyser) return;
@@ -1132,11 +1213,13 @@ window.PWONYX = window.PWONYX || {};
             if (this.isPlaying) {
                 if (this.currentTrack === 'chaoz') {
                     const t = this.getTrackCurrentTime();
-                    // Chaoz Fantasy pre-drop build-up windows: 20.4s..24.4s, 56.4s..60.4s, 111.0s..115.0s
+                    // Chaoz Fantasy pre-drop build-up windows: 20.4s..24.4s, 56.4s..60.4s, 88.0s..91.8s, 111.0s..115.0s
                     if (t >= 20.4 && t < 24.4) {
                         this.buildUpCharge = (t - 20.4) / 4.0;
                     } else if (t >= 56.4 && t < 60.4) {
                         this.buildUpCharge = (t - 56.4) / 4.0;
+                    } else if (t >= 88.0 && t < 91.8) {
+                        this.buildUpCharge = (t - 88.0) / 3.8;
                     } else if (t >= 111.0 && t < 115.0) {
                         this.buildUpCharge = (t - 111.0) / 4.0;
                     } else {

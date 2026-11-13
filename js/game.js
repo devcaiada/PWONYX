@@ -15,7 +15,7 @@ window.PWONYX = window.PWONYX || {};
     const Audio = window.PWONYX.AudioEngine;
 
     const NEON_BALL_COLORS = [
-        '#00f5d4', '#00bbf9', '#fee440', '#f15bb5', '#9b5de5', '#ff007f', '#38b000'
+        '#00f5d4', '#5ce1ff', '#64dfdf', '#a882ff', '#ff5ca8', '#ffd166', '#80ffdb'
     ];
 
     class PwonyxGame {
@@ -120,7 +120,11 @@ window.PWONYX = window.PWONYX || {};
                 core: loadImg('assets/images/menu_hero_core.webp')
             };
 
-            // Gameplay widescreen cosmic nebula asset
+            // Gameplay abyssal environment assets (cohesive with Nano Banana cover)
+            this.arenaAbyssBg = loadImg('assets/images/arena_abyss_bg.jpg');
+            this.arenaCaustics = loadImg('assets/images/arena_caustics_overlay.webp');
+
+            // Gameplay widescreen cosmic nebula fallback asset
             this.parallaxBgImg = new Image();
             this.parallaxBgImg.src = 'assets/images/parallax_bg.jpg';
             this.parallaxBgLoaded = false;
@@ -132,13 +136,15 @@ window.PWONYX = window.PWONYX || {};
                 slow: new Image(),
                 ammo: new Image(),
                 sticky: new Image(),
-                overdrive: new Image()
+                overdrive: new Image(),
+                shield: new Image()
             };
             this.powerupIcons.wide.src = 'assets/icons/powerup-larger.png';
             this.powerupIcons.slow.src = 'assets/icons/powerup-slow.png';
             this.powerupIcons.ammo.src = 'assets/icons/powerup-ammo.png';
             this.powerupIcons.sticky.src = 'assets/icons/powerup-sticky.png';
             this.powerupIcons.overdrive.src = 'assets/icons/powerup-overdrive.png';
+            this.powerupIcons.shield.src = 'assets/icons/powerup-shield.png';
 
             // Pre-allocated Object Pools (Zero GC during gameplay)
             this.balls = new Pools.BallPool(CFG.MAX_BALLS_POOL);
@@ -165,13 +171,20 @@ window.PWONYX = window.PWONYX || {};
             this.domination = 100; // % rating (for the 97% achievement!)
             this.survivalHealth = 100;
             this.elapsedTime = 0;
+            this.matchDuration = this.mode.duration || 134;
             this.progress = 0; // 0 to 100%
             this.targetBallCount = 1;
             this.ballSpawnTimer = 0;
             this.powerupSpawnTimer = 0;
             this.ammoSpawnTimer = 0;
+            this.respawnDelayTimer = 0;
             this.screenShake = 0;
             this.chromaticFlash = 0;
+            this.goalFlashTop = 0;
+            this.shieldFlashBottom = 0;
+            this.comboCount = 0;
+            this.comboMultiplier = 1.0;
+            this.shieldCharges = 0;
 
             // Ball Barrage State (Climax / Beat-drop stream sequence)
             this.barrageQueue = [];
@@ -186,7 +199,8 @@ window.PWONYX = window.PWONYX || {};
                 wide: 0,
                 slow: 0,
                 sticky: 0,
-                overdrive: 0
+                overdrive: 0,
+                shield: 0
             };
 
             // Paddles (centered inside the 4:3 arena)
@@ -196,10 +210,11 @@ window.PWONYX = window.PWONYX || {};
                 y: this.arenaY + this.arenaHeight - CFG.PADDLE_Y_OFFSET,
                 prevX: initCenterX,
                 vx: 0,
+                smoothVx: 0,
                 width: CFG.PADDLE_BASE_WIDTH,
                 height: CFG.PADDLE_HEIGHT,
-                ghostAmmo: 3,
-                maxGhostAmmo: 8,
+                ghostAmmo: 2,
+                maxGhostAmmo: 99,
                 distanceTraveled: 0,
                 color: '#00f5d4'
             };
@@ -595,12 +610,21 @@ window.PWONYX = window.PWONYX || {};
             this.domination = 100;
             this.survivalHealth = 100;
             this.elapsedTime = 0;
+            this.matchDuration = this.mode.isSurvival
+                ? (Audio.getTrackDuration ? Audio.getTrackDuration(134) : 134)
+                : (Audio.getTrackDuration ? Audio.getTrackDuration(this.mode.duration) : this.mode.duration);
             this.progress = 0;
             this.targetBallCount = 1;
             this.ballSpawnTimer = 0;
-            this.powerupSpawnTimer = (this.mode.specialPowerInterval || 32.0) * 0.65;
-            this.ammoSpawnTimer = 1.6; // First single ammo item drops shortly after start!
+            this.powerupSpawnTimer = (this.mode.specialPowerInterval || 13.0) * 0.45;
+            this.ammoSpawnTimer = 2.0; // First single ammo item drops shortly after start!
+            this.respawnDelayTimer = 0;
             this.screenShake = 0;
+            this.goalFlashTop = 0;
+            this.shieldFlashBottom = 0;
+            this.comboCount = 0;
+            this.comboMultiplier = 1.0;
+            this.shieldCharges = 0;
 
             this.barrageQueue = [];
             this.barrageTimer = 0;
@@ -613,22 +637,24 @@ window.PWONYX = window.PWONYX || {};
             this.buffs.slow = 0;
             this.buffs.sticky = 0;
             this.buffs.overdrive = 0;
+            this.buffs.shield = 0;
 
             const mastUpgrade = this.upgrades.powerupDuration || 0;
             const baseMaxAmmo = typeof this.mode.maxAmmo === 'number' ? this.mode.maxAmmo : 99;
+            const startAmmo = typeof this.mode.startAmmo === 'number' ? this.mode.startAmmo : 2;
             const cx = this.arenaX + this.arenaWidth / 2;
             this.player.x = cx;
             this.player.prevX = cx;
+            this.player.smoothVx = 0;
             this.player.y = this.arenaY + this.arenaHeight - CFG.PADDLE_Y_OFFSET;
             this.player.distanceTraveled = 0;
-            // Always start at 0 ammo — ammo is only earned by collecting falling ammo items!
-            this.player.ghostAmmo = 0;
+            this.player.ghostAmmo = startAmmo;
             this.player.maxGhostAmmo = baseMaxAmmo + mastUpgrade * 10;
 
             this.opponent.x = cx;
             this.opponent.prevX = cx;
             this.opponent.y = this.arenaY + CFG.PADDLE_Y_OFFSET;
-            this.opponent.ghostAmmo = 0;
+            this.opponent.ghostAmmo = this.mode.isTwoPlayer ? startAmmo : 0;
             this.opponent.maxGhostAmmo = baseMaxAmmo;
             this.versusSpawnToggle = false;
 
@@ -702,11 +728,11 @@ window.PWONYX = window.PWONYX || {};
 
             let spawnY;
             if (fromTop) {
-                const padTop = this.opponent ? (this.opponent.y - this.opponent.height / 2) : (this.arenaY + 33);
-                spawnY = Math.max(this.arenaY + 10, padTop - CFG.BALL_RADIUS - 8);
+                const padBottom = this.opponent ? (this.opponent.y + this.opponent.height / 2) : (this.arenaY + CFG.PADDLE_Y_OFFSET + 7);
+                spawnY = Math.min(this.arenaY + this.arenaHeight - 16, padBottom + CFG.BALL_RADIUS + 6);
             } else {
-                const paddleBottom = this.player ? (this.player.y + this.player.height / 2) : (this.arenaY + this.arenaHeight - 33);
-                spawnY = Math.min(this.arenaY + this.arenaHeight - 10, paddleBottom + CFG.BALL_RADIUS + 8);
+                const padTop = this.player ? (this.player.y - this.player.height / 2) : (this.arenaY + this.arenaHeight - CFG.PADDLE_Y_OFFSET - 7);
+                spawnY = Math.max(this.arenaY + 16, padTop - CFG.BALL_RADIUS - 6);
             }
 
             const b = this.balls.spawn(spawnX, spawnY, vx, vy, color);
@@ -814,17 +840,59 @@ window.PWONYX = window.PWONYX || {};
 
             // Initial shockwave and particle blast at launcher
             const padX = this.player ? this.player.x : this.arenaX + this.arenaWidth / 2;
-            const launchY = this.player ? (this.player.y + this.player.height / 2 + 10) : (this.arenaY + this.arenaHeight - 20);
+            const launchY = this.player ? (this.player.y - this.player.height / 2 - 8) : (this.arenaY + this.arenaHeight - 48);
             this.particles.shockwave(padX, launchY, '#00f5d4', 85);
-            this.particles.burst(padX, launchY, 28, '#fee440', 100, 320, 4);
+            this.particles.burst(padX, launchY, 28, '#ffd166', 100, 320, 4);
 
             if (Audio && Audio.playScoreGoal) {
                 Audio.playScoreGoal();
             }
         }
 
+        releaseStuckBall(b) {
+            if (!b || !b.active) return;
+            b.stuckTimer = 0;
+            const baseSpd = b.savedSpeed || (this.mode.baseBallSpeed * CFG.SPEED_SCALE);
+            const launchSpd = Math.min(this.mode.maxBallSpeed * CFG.SPEED_SCALE * 1.12, baseSpd * 1.15);
+
+            // Aim away from the opponent paddle toward the open flank of the arena
+            const arenaMid = this.arenaX + this.arenaWidth / 2;
+            const aimRight = this.opponent.x <= arenaMid;
+            const targetX = aimRight ? (this.arenaX + this.arenaWidth * 0.82) : (this.arenaX + this.arenaWidth * 0.18);
+            const dx = targetX - b.x;
+            const dy = (this.arenaY + 20) - b.y;
+            const rawAngle = Math.atan2(dx, -dy);
+            const clampedAngle = Math.max(-0.92, Math.min(0.92, rawAngle));
+
+            b.vx = Math.sin(clampedAngle) * launchSpd;
+            b.vy = -Math.abs(Math.cos(clampedAngle) * launchSpd);
+            const curveUpgrade = 1 + (this.upgrades.curvePower || 0) * 0.18;
+            b.spin = (aimRight ? -260 : 260) * curveUpgrade;
+            b.isCurvedShot = true;
+            b.y = this.player.y - this.player.height / 2 - b.radius - 2;
+
+            this.particles.shockwave(b.x, b.y, '#ff4da6', 44);
+            this.particles.burst(b.x, b.y, 14, '#ff4da6', 70, 220, 3);
+            Audio.playBounce(1.3, true, true);
+        }
+
+        releaseAllStuckBalls() {
+            let released = 0;
+            for (let i = 0; i < this.balls.size; i++) {
+                const b = this.balls.items[i];
+                if (b.active && b.stuckTimer > 0) {
+                    this.releaseStuckBall(b);
+                    released++;
+                }
+            }
+            return released > 0;
+        }
+
         fireGhostPaddle(owner) {
             const isP1 = owner === 'player1';
+            if (isP1 && this.releaseAllStuckBalls()) {
+                return;
+            }
             const pad = isP1 ? this.player : this.opponent;
             if (pad.ghostAmmo <= 0) return;
 
@@ -834,15 +902,15 @@ window.PWONYX = window.PWONYX || {};
             const ghostWidth = pad.width * (1.05 + boostLevel * 0.06 + (isOnBeat ? 0.12 : 0));
             const hits = 1 + Math.floor((boostLevel + 1) / 2);
             const vy = (isP1 ? -380 : 380) * (isOnBeat ? 1.15 : 1.0);
-            const color = isP1 ? (isOnBeat ? '#fee440' : '#00f5d4') : '#ff007f';
+            const color = isP1 ? (isOnBeat ? '#ffd166' : '#00f5d4') : '#ff007f';
 
             this.ghosts.spawn(pad.x, pad.y + (isP1 ? -14 : 14), vy, ghostWidth, hits, owner, color);
             this.particles.burst(pad.x, pad.y, isOnBeat ? 22 : 16, color, 50, 190, 3);
             if (isOnBeat) {
-                this.particles.shockwave(pad.x, pad.y - 10, '#fee440', 55);
+                this.particles.shockwave(pad.x, pad.y - 10, '#ffd166', 55);
                 const bonus = Math.round(10 * this.mode.scoreMultiplier);
                 this.score += bonus;
-                this.texts.spawn(pad.x, pad.y - 28, `🎵 BEAT LAUNCH! +${bonus}`, '#fee440', 13, 0.75);
+                this.texts.spawn(pad.x, pad.y - 28, `🎵 BEAT LAUNCH! +${bonus}`, '#ffd166', 13, 0.75);
             }
             Audio.playGhostLaunch(isOnBeat);
         }
@@ -1031,12 +1099,25 @@ window.PWONYX = window.PWONYX || {};
             this.elapsedTime += dt;
             this.screenShake = Math.max(0, this.screenShake - dt * 25);
             this.chromaticFlash = Math.max(0, this.chromaticFlash - dt * 3);
+            this.goalFlashTop = Math.max(0, this.goalFlashTop - dt * 2.8);
+            this.shieldFlashBottom = Math.max(0, this.shieldFlashBottom - dt * 2.2);
+            if (this.respawnDelayTimer > 0) {
+                this.respawnDelayTimer = Math.max(0, this.respawnDelayTimer - dt);
+            }
+            this.menuTime += dt;
+            this.advanceFlowParticles(dt, 0.35);
+
+            // Sync match duration to current track length (Chaoz Fantasy ~133.9s or loaded audio)
+            const liveDuration = (Audio && Audio.getTrackDuration)
+                ? Audio.getTrackDuration(this.matchDuration || this.mode.duration || 134)
+                : (this.matchDuration || this.mode.duration || 134);
+            this.matchDuration = liveDuration;
 
             // Match progress bar
             if (this.mode.isSurvival) {
-                this.progress = Math.min(100, (this.elapsedTime / 120) * 100);
+                this.progress = Math.min(100, (this.elapsedTime / this.matchDuration) * 100);
             } else {
-                this.progress = Math.min(100, (this.elapsedTime / this.mode.duration) * 100);
+                this.progress = Math.min(100, (this.elapsedTime / this.matchDuration) * 100);
                 if (this.progress >= 100) {
                     this.finishMatch(true);
                     return;
@@ -1044,8 +1125,10 @@ window.PWONYX = window.PWONYX || {};
             }
 
             // Update temporary buffs
-            let hadWide = this.buffs.wide > 0;
-            let hadSlow = this.buffs.slow > 0;
+            const hadWide = this.buffs.wide > 0;
+            const hadSlow = this.buffs.slow > 0;
+            const hadSticky = this.buffs.sticky > 0;
+            const hadShield = this.buffs.shield > 0;
             for (const k in this.buffs) {
                 if (this.buffs[k] > 0) {
                     this.buffs[k] = Math.max(0, this.buffs[k] - dt);
@@ -1056,6 +1139,12 @@ window.PWONYX = window.PWONYX || {};
             }
             if (hadSlow && this.buffs.slow === 0) {
                 Audio.setLowPassEffect('normal');
+            }
+            if (hadSticky && this.buffs.sticky === 0) {
+                this.releaseAllStuckBalls();
+            }
+            if (hadShield && this.buffs.shield === 0) {
+                this.shieldCharges = 0;
             }
 
             // Escalate target ball count in sync with the music intensity & beat pulses (up to 20 balls!)
@@ -1138,18 +1227,21 @@ window.PWONYX = window.PWONYX || {};
                 } else if (chaozPlayhead >= 60.4 && !this.barrageTriggeredCheckpoints.has('drop_2')) {
                     this.barrageTriggeredCheckpoints.add('drop_2');
                     this.triggerBallBarrage(null, 'drop_2');
-                } else if (this.mode.isSurvival && chaozPlayhead >= 115.0 && !this.barrageTriggeredCheckpoints.has('drop_survival')) {
-                    this.barrageTriggeredCheckpoints.add('drop_survival');
-                    this.triggerBallBarrage(12, 'drop_survival');
+                } else if (chaozPlayhead >= 91.8 && !this.barrageTriggeredCheckpoints.has('drop_3')) {
+                    this.barrageTriggeredCheckpoints.add('drop_3');
+                    this.triggerBallBarrage(null, 'drop_3');
+                } else if (chaozPlayhead >= 115.0 && !this.barrageTriggeredCheckpoints.has('drop_4')) {
+                    this.barrageTriggeredCheckpoints.add('drop_4');
+                    this.triggerBallBarrage(this.mode.isSurvival ? 12 : null, 'drop_4');
                 }
             } else if (Audio.consumeDynamicDrop && Audio.consumeDynamicDrop()) {
                 this.triggerBallBarrage(null, 'dynamic_drop');
             }
 
             // Ensure active balls match targetBallCount (alternating top/bottom in 2P Versus mode)
-            // Only refill when not actively launching a barrage sequence
+            // Only refill when not actively launching a barrage sequence and respawn grace timer has elapsed
             const activeBallCount = this.balls.countActive();
-            if (activeBallCount < this.targetBallCount && this.barrageQueue.length === 0) {
+            if (activeBallCount < this.targetBallCount && this.barrageQueue.length === 0 && this.respawnDelayTimer <= 0) {
                 const fromTop = this.mode.isTwoPlayer ? (this.versusSpawnToggle = !this.versusSpawnToggle) : false;
                 this.spawnBallFromBottom(null, null, null, null, fromTop);
             }
@@ -1168,11 +1260,11 @@ window.PWONYX = window.PWONYX || {};
 
             // --- Update Player 1 Paddle ---
             this.player.prevX = this.player.x;
-            const keySpeed = 820;
+            const keySpeed = 900;
             if (this.input.mouseActive) {
-                // Smooth high-precision mouse tracking
+                // Ultra-responsive 1:1 mouse tracking matching classic Pwong 2
                 const diff = this.input.mouseX - this.player.x;
-                this.player.x += diff * Math.min(1, dt * 28);
+                this.player.x += diff * Math.min(1, dt * 68);
             } else {
                 if (this.input.left) this.player.x -= keySpeed * dt;
                 if (this.input.right) this.player.x += keySpeed * dt;
@@ -1182,7 +1274,10 @@ window.PWONYX = window.PWONYX || {};
             const halfP1 = this.player.width / 2;
             this.player.x = Math.max(this.arenaX + halfP1 + 8, Math.min(this.arenaX + this.arenaWidth - halfP1 - 8, this.player.x));
             const movedPx = Math.abs(this.player.x - this.player.prevX);
-            this.player.vx = (this.player.x - this.player.prevX) / Math.max(dt, 0.001);
+            const rawVx = (this.player.x - this.player.prevX) / Math.max(dt, 0.001);
+            this.player.vx = rawVx;
+            const vxAlpha = Math.min(1, dt * 16);
+            this.player.smoothVx = (this.player.smoothVx || 0) * (1 - vxAlpha) + rawVx * vxAlpha;
             this.player.distanceTraveled += movedPx;
 
             if (this.player.distanceTraveled >= 50000 && this.callbacks.onAchievement) {
@@ -1227,32 +1322,41 @@ window.PWONYX = window.PWONYX || {};
                 this.particles.shockwave(spawnX, spawnY, '#00f5d4', 32);
             }
 
-            // Special power-ups (wide / slow / magnet / 2x):
-            // Strictly 1 at a time, beat-quantized and spaced apart from ammo drops so they never collide or clutter.
+            // Special power-ups (wide / slow / sticky / overdrive / shield):
+            // Strictly 1 orb falling at a time, while allowing up to 2 simultaneous active buffs.
             this.powerupSpawnTimer -= dt;
             if (this.powerupSpawnTimer <= 0 && (beatPulse > 0.35 || this.powerupSpawnTimer <= -0.32)) {
-                const buffActive = this.buffs.wide > 0 || this.buffs.slow > 0 || this.buffs.sticky > 0 || this.buffs.overdrive > 0;
+                const activeBuffCount =
+                    (this.buffs.wide > 0 ? 1 : 0) +
+                    (this.buffs.slow > 0 ? 1 : 0) +
+                    (this.buffs.sticky > 0 ? 1 : 0) +
+                    (this.buffs.overdrive > 0 ? 1 : 0) +
+                    (this.buffs.shield > 0 ? 1 : 0);
                 let specialFalling = false;
                 for (let i = 0; i < this.powerups.size; i++) {
                     const q = this.powerups.items[i];
                     if (q.active && q.type !== 'ammo') { specialFalling = true; break; }
                 }
-                if (buffActive || specialFalling) {
-                    this.powerupSpawnTimer = 5.0; // re-check shortly
+                if (specialFalling || activeBuffCount >= 2) {
+                    this.powerupSpawnTimer = 3.5; // re-check shortly
                 } else {
-                    const baseSpecialInterval = this.mode.specialPowerInterval || 34.0;
-                    this.powerupSpawnTimer = (baseSpecialInterval * (1 + progressRatio * 0.35) + Math.random() * 6.0) * freqMult;
+                    const baseSpecialInterval = this.mode.specialPowerInterval || 13.0;
+                    this.powerupSpawnTimer = (baseSpecialInterval * (0.85 + progressRatio * 0.25) + Math.random() * 3.0) * freqMult;
 
                     // Ensure ammo drop doesn't happen at the exact same instant
-                    if (this.ammoSpawnTimer < 2.5) {
-                        this.ammoSpawnTimer = 2.5 + Math.random() * 1.5;
+                    if (this.ammoSpawnTimer < 2.2) {
+                        this.ammoSpawnTimer = 2.2 + Math.random() * 1.2;
                     }
 
-                    const types = ['wide', 'slow', 'sticky', 'overdrive'];
-                    const pick = types[Math.floor(Math.random() * types.length)];
+                    const candidateTypes = this.mode.isTwoPlayer
+                        ? ['wide', 'slow', 'sticky', 'overdrive']
+                        : ['wide', 'slow', 'sticky', 'overdrive', 'shield'];
+                    const availableTypes = candidateTypes.filter(t => !(this.buffs[t] > 0));
+                    const poolTypes = availableTypes.length > 0 ? availableTypes : candidateTypes;
+                    const pick = poolTypes[Math.floor(Math.random() * poolTypes.length)];
                     const toP2 = this.mode.isTwoPlayer && Math.random() < 0.5;
                     const spawnY = this.mode.isTwoPlayer ? (this.arenaY + this.arenaHeight * 0.5) : (this.arenaY + 75);
-                    const vy = (toP2 ? -1 : 1) * (100 + Math.random() * 35);
+                    const vy = (toP2 ? -1 : 1) * (115 + Math.random() * 35);
                     this.powerups.spawn(
                         this.arenaX + 90 + Math.random() * (this.arenaWidth - 180),
                         spawnY,
@@ -1282,7 +1386,7 @@ window.PWONYX = window.PWONYX || {};
 
                 if (p.x < this.arenaX + 25 || p.x > this.arenaX + this.arenaWidth - 25) p.vx *= -1;
 
-                // Check collection by Player 1 paddle (or Player 2 in 2P Versus mode)
+                // Check collection by Player 1, Player 2 (2P), or ascending Ghost Paddles (Pwong 2 sniping)
                 if (
                     Math.abs(p.y - this.player.y) <= p.radius + this.player.height &&
                     Math.abs(p.x - this.player.x) <= halfP1 + p.radius
@@ -1296,8 +1400,22 @@ window.PWONYX = window.PWONYX || {};
                 ) {
                     this.collectPowerUp(p, 'player2');
                     p.active = false;
-                } else if (p.y > this.arenaY + this.arenaHeight + 20 || p.y < this.arenaY - 20) {
-                    p.active = false;
+                } else {
+                    for (let gIdx = 0; gIdx < this.ghosts.size; gIdx++) {
+                        const g = this.ghosts.items[gIdx];
+                        if (!g.active) continue;
+                        if (
+                            Math.abs(p.y - g.y) <= p.radius + g.height &&
+                            Math.abs(p.x - g.x) <= g.width / 2 + p.radius
+                        ) {
+                            this.collectPowerUp(p, g.owner);
+                            p.active = false;
+                            break;
+                        }
+                    }
+                    if (p.active && (p.y > this.arenaY + this.arenaHeight + 20 || p.y < this.arenaY - 20)) {
+                        p.active = false;
+                    }
                 }
             }
 
@@ -1313,9 +1431,23 @@ window.PWONYX = window.PWONYX || {};
                 b.px = b.x;
                 b.py = b.y;
 
+                // Sticky Magnet Latch: holds ball briefly on Player 1 paddle, then auto-launches (or fires early on click/Space)
+                if (b.stuckTimer > 0) {
+                    b.stuckTimer -= dt;
+                    b.x = Math.max(
+                        this.arenaX + 10 + b.radius,
+                        Math.min(this.arenaX + this.arenaWidth - 10 - b.radius, this.player.x + (b.stuckOffsetX || 0))
+                    );
+                    b.y = this.player.y - this.player.height / 2 - b.radius - 2;
+                    if (b.stuckTimer <= 0) {
+                        this.releaseStuckBall(b);
+                    }
+                    continue;
+                }
+
                 // Magnet/Sticky buff pulls incoming downward balls slightly toward player paddle X
-                if (this.buffs.sticky > 0 && b.vy > 0 && b.y > this.arenaY + this.arenaHeight * 0.45) {
-                    const pull = (this.player.x - b.x) * 3.2;
+                if (this.buffs.sticky > 0 && b.vy > 0 && b.y > this.arenaY + this.arenaHeight * 0.42) {
+                    const pull = (this.player.x - b.x) * 3.6;
                     b.vx += pull * dt;
                 }
 
@@ -1337,6 +1469,18 @@ window.PWONYX = window.PWONYX || {};
                         const scale = maxAllowedSpeed / curSpd;
                         b.vx *= scale;
                         b.vy *= scale;
+                    }
+
+                    // Prevent shallow horizontal bounce loops by enforcing >= 42% vertical velocity
+                    const spdNow = Math.hypot(b.vx, b.vy);
+                    if (spdNow > 1) {
+                        const minVy = spdNow * 0.42;
+                        if (Math.abs(b.vy) < minVy) {
+                            const dirY = b.vy >= 0 ? 1 : -1;
+                            const dirX = b.vx >= 0 ? 1 : -1;
+                            b.vy = dirY * minVy;
+                            b.vx = dirX * Math.sqrt(Math.max(0, spdNow * spdNow - minVy * minVy));
+                        }
                     }
 
                     b.x += b.vx * subDt * slowMult;
@@ -1376,10 +1520,11 @@ window.PWONYX = window.PWONYX || {};
                         b.vy > 0 &&
                         b.y + b.radius >= p1Top &&
                         b.y - b.radius <= this.player.y + this.player.height &&
-                        Math.abs(b.x - this.player.x) <= halfP1 + b.radius + 3
+                        Math.abs(b.x - this.player.x) <= halfP1 + b.radius + 4
                     ) {
                         this.handlePaddleBounce(b, this.player, -1, curveUpgrade);
                         this.playerHits++;
+                        if (b.stuckTimer > 0) break;
                     }
 
                     // Opponent (Top) Paddle Collision
@@ -1388,13 +1533,45 @@ window.PWONYX = window.PWONYX || {};
                         b.vy < 0 &&
                         b.y - b.radius <= p2Bottom &&
                         b.y + b.radius >= this.opponent.y - this.opponent.height &&
-                        Math.abs(b.x - this.opponent.x) <= halfP2 + b.radius + 3
+                        Math.abs(b.x - this.opponent.x) <= halfP2 + b.radius + 4
                     ) {
                         this.handlePaddleBounce(b, this.opponent, 1, 1.0);
                     }
 
+                    // Abyssal Aegis Shield interception along bottom defense line (1P modes)
+                    if (
+                        !this.mode.isTwoPlayer &&
+                        this.buffs.shield > 0 &&
+                        this.shieldCharges > 0 &&
+                        b.vy > 0 &&
+                        b.y + b.radius >= this.arenaY + this.arenaHeight - 10
+                    ) {
+                        b.y = this.arenaY + this.arenaHeight - 10 - b.radius;
+                        b.vy = -Math.abs(b.vy) * 1.04;
+                        this.shieldCharges--;
+                        this.shieldFlashBottom = 1.0;
+                        this.particles.shockwave(b.x, this.arenaY + this.arenaHeight - 8, '#2ec4b6', 54);
+                        this.particles.burst(b.x, this.arenaY + this.arenaHeight - 8, 16, '#2ec4b6', 70, 230, 3.2);
+                        this.texts.spawn(
+                            Math.max(this.arenaX + 60, Math.min(this.arenaX + this.arenaWidth - 60, b.x)),
+                            this.arenaY + this.arenaHeight - 30,
+                            this.shieldCharges > 0 ? `AEGIS! (${this.shieldCharges})` : 'AEGIS QUEBRADA!',
+                            '#2ec4b6',
+                            13,
+                            0.75
+                        );
+                        Audio.playBounce(1.22, false, true);
+                        if (this.shieldCharges <= 0) {
+                            this.buffs.shield = 0;
+                        }
+                        break;
+                    }
+
                     // --- Check Goal Scored at Top or Ball Missed at Bottom ---
-                    if (b.y < this.arenaY - b.radius) {
+                    const topGoalHit = this.mode.isTwoPlayer
+                        ? (b.y < this.arenaY - b.radius)
+                        : (b.vy < 0 && b.y - b.radius <= this.arenaY + 8);
+                    if (topGoalHit) {
                         this.handleGoalScored(b);
                     } else if (b.y > this.arenaY + this.arenaHeight + b.radius) {
                         if (this.handlePlayerMissed(b, currentBalls)) return;
@@ -1426,12 +1603,13 @@ window.PWONYX = window.PWONYX || {};
         }
 
         handleGoalScored(b) {
-            b.active = false;
             this.aiMisses++;
             const overdriveMult = this.buffs.overdrive > 0 ? 2 : 1;
             const curveBonus = b.isCurvedShot ? 1.5 : 1.0;
-            const pts = Math.round(25 * this.mode.scoreMultiplier * overdriveMult * curveBonus);
+            const comboMult = this.comboMultiplier || 1;
+            const pts = Math.round(28 * this.mode.scoreMultiplier * overdriveMult * curveBonus * comboMult);
             this.score += pts;
+            this.goalFlashTop = 1.0;
 
             if (this.mode.isSurvival) {
                 this.survivalHealth = Math.min(100, this.survivalHealth + 2.5);
@@ -1444,7 +1622,7 @@ window.PWONYX = window.PWONYX || {};
                 fxX,
                 this.arenaY + 38,
                 b.isCurvedShot ? `+${pts} CURVE!` : `+${pts}`,
-                b.isCurvedShot ? '#fee440' : '#00f5d4',
+                b.isCurvedShot ? '#ffd166' : '#00f5d4',
                 16,
                 0.85
             );
@@ -1453,16 +1631,42 @@ window.PWONYX = window.PWONYX || {};
             if (b.isCurvedShot && this.callbacks.onCurveGoal) {
                 this.callbacks.onCurveGoal();
             }
+
+            // In 1P modes, top goal barrier rebounds the ball into play so rallies keep escalating
+            const activeCount = this.balls.countActive();
+            const cap = Math.max(this.targetBallCount, this.isBarrageActive ? this.mode.maxBalls : this.targetBallCount);
+            if (!this.mode.isTwoPlayer && activeCount <= cap) {
+                b.y = this.arenaY + 8 + b.radius + 1;
+                const boost = 0.94 + Math.random() * 0.08;
+                b.vx *= 0.98;
+                b.vy = Math.abs(b.vy) * boost;
+                b.spin *= 0.6;
+                b.isCurvedShot = false;
+                const spd = Math.hypot(b.vx, b.vy);
+                const minVy = spd * 0.42;
+                if (b.vy < minVy) {
+                    b.vy = minVy;
+                    b.vx = Math.sign(b.vx || 1) * Math.sqrt(Math.max(0, spd * spd - minVy * minVy));
+                }
+            } else {
+                b.active = false;
+            }
+
             this.updateDominationRating();
         }
 
         handlePlayerMissed(b, currentBalls) {
             b.active = false;
             this.playerMisses++;
+            this.respawnDelayTimer = 0.42;
+
+            // Combo partially decays on miss instead of zeroing out harshly in multi-ball chaos
+            this.comboCount = Math.floor((this.comboCount || 0) * 0.4);
+            this.comboMultiplier = Math.min(4.0, 1 + Math.floor(this.comboCount / 5) * 0.25);
 
             // Pwong 2 Dynamic Penalty Scaling:
             // The more balls on screen, the less an individual miss penalizes you!
-            const activeNow = Math.max(1, currentBalls);
+            const activeNow = Math.max(1, this.balls.countActive() + 1);
             const scaleFactor = 1 / Math.pow(activeNow, 0.65);
             const rawPenalty = Math.max(3, Math.round(32 * scaleFactor * this.mode.scoreMultiplier));
             this.score = Math.max(0, this.score - rawPenalty);
@@ -1495,17 +1699,51 @@ window.PWONYX = window.PWONYX || {};
             const isRhythmHit = dirY < 0 && (Audio.beatPulse || 0) >= 0.45;
             const beatSpeedBoost = isRhythmHit ? 1.065 : 1.035;
 
+            if (dirY < 0) {
+                this.comboCount = (this.comboCount || 0) + 1;
+                this.comboMultiplier = Math.min(4.0, 1 + Math.floor(this.comboCount / 5) * 0.25);
+                const overdriveMult = this.buffs.overdrive > 0 ? 2 : 1;
+                const defPts = Math.max(2, Math.round(5 * this.mode.scoreMultiplier * this.comboMultiplier * overdriveMult));
+                this.score += defPts;
+            }
+
             // Current speed scales slightly up to mode.maxBallSpeed
             const currentSpeed = Math.hypot(ball.vx, ball.vy);
+
+            // Sticky/Magnet latch on Player 1 paddle for aimed counter-shots
+            if (dirY < 0 && this.buffs.sticky > 0) {
+                ball.stuckTimer = 0.16;
+                ball.stuckOffsetX = Math.max(-halfW * 0.85, Math.min(halfW * 0.85, ball.x - paddle.x));
+                ball.savedSpeed = currentSpeed;
+                ball.vx = 0;
+                ball.vy = 0;
+                ball.spin = 0;
+                ball.y = paddle.y - paddle.height / 2 - ball.radius - 2;
+                this.particles.burst(ball.x, ball.y, 12, '#ff4da6', 50, 180, 2.8);
+                Audio.playBounce(1.08, false, isRhythmHit);
+                return;
+            }
+
             const nextSpeed = Math.min(this.mode.maxBallSpeed * CFG.SPEED_SCALE, currentSpeed * beatSpeedBoost);
+            const padVx = dirY < 0 ? (paddle.smoothVx ?? paddle.vx) : paddle.vx;
 
             // Bounce angle up to 62 degrees at paddle extremes
             const bounceAngle = relIntersect * (Math.PI * 0.34);
-            ball.vx = Math.sin(bounceAngle) * nextSpeed + paddle.vx * 0.22;
+            ball.vx = Math.sin(bounceAngle) * nextSpeed + padVx * 0.22;
             ball.vy = Math.cos(bounceAngle) * nextSpeed * dirY;
 
+            // Enforce minimum 42% vertical velocity so bounces always stay lively
+            const postSpd = Math.hypot(ball.vx, ball.vy);
+            if (postSpd > 1) {
+                const minVy = postSpd * 0.42;
+                if (Math.abs(ball.vy) < minVy) {
+                    ball.vy = dirY * minVy;
+                    ball.vx = Math.sign(ball.vx || relIntersect || 1) * Math.sqrt(Math.max(0, postSpd * postSpd - minVy * minVy));
+                }
+            }
+
             // Impart Magnus Spin from paddle movement + edge hit
-            const spinInput = (-paddle.vx * 0.65 + relIntersect * 220) * curveMult;
+            const spinInput = (-padVx * 0.65 + relIntersect * 220) * curveMult;
             ball.spin = Math.max(-650, Math.min(650, spinInput));
             ball.isCurvedShot = dirY < 0 && Math.abs(ball.spin) > 240;
 
@@ -1513,14 +1751,14 @@ window.PWONYX = window.PWONYX || {};
                 ? paddle.y - paddle.height / 2 - ball.radius - 1
                 : paddle.y + paddle.height / 2 + ball.radius + 1;
 
-            const sparkColor = ball.isCurvedShot ? '#fee440' : (isRhythmHit ? '#00f5d4' : paddle.color);
+            const sparkColor = ball.isCurvedShot ? '#ffd166' : (isRhythmHit ? '#00f5d4' : paddle.color);
             this.particles.burst(ball.x, ball.y, (ball.isCurvedShot || isRhythmHit) ? 18 : 10, sparkColor, 60, 230, 3.2);
 
             if (isRhythmHit) {
                 const overdriveMult = this.buffs.overdrive > 0 ? 2 : 1;
-                const rhythmPts = Math.max(5, Math.round(8 * this.mode.scoreMultiplier * overdriveMult));
+                const rhythmPts = Math.max(5, Math.round(8 * this.mode.scoreMultiplier * overdriveMult * (this.comboMultiplier || 1)));
                 this.score += rhythmPts;
-                this.particles.shockwave(ball.x, ball.y, '#fee440', 48);
+                this.particles.shockwave(ball.x, ball.y, '#ffd166', 48);
                 // Throttle floating text slightly when many balls bounce on the same frame
                 if (!this._lastRhythmTextTime || this.elapsedTime - this._lastRhythmTextTime > 0.28) {
                     this._lastRhythmTextTime = this.elapsedTime;
@@ -1528,7 +1766,7 @@ window.PWONYX = window.PWONYX || {};
                         ball.x,
                         ball.y - 18,
                         ball.isCurvedShot ? `🎵 RHYTHM CURVE! +${rhythmPts}` : `🎵 RHYTHM! +${rhythmPts}`,
-                        '#fee440',
+                        '#ffd166',
                         13,
                         0.68
                     );
@@ -1610,6 +1848,10 @@ window.PWONYX = window.PWONYX || {};
                     this.buffs.sticky = def.baseDuration * durMult;
                 } else if (p.type === 'overdrive') {
                     this.buffs.overdrive = def.baseDuration * durMult;
+                } else if (p.type === 'shield') {
+                    this.buffs.shield = def.baseDuration * durMult;
+                    this.shieldCharges = 2 + ((this.upgrades.ghostBooster || 0) >= 4 ? 1 : 0);
+                    this.shieldFlashBottom = 1.0;
                 }
             }
 
@@ -2326,46 +2568,11 @@ window.PWONYX = window.PWONYX || {};
                 ctx.translate(sx, sy);
             }
 
-            // 1. Pure black base (like the original)
-            ctx.fillStyle = '#000';
+            // 1. Abyssal obsidian base + cohesive Nano Banana environment
+            ctx.fillStyle = '#020611';
             ctx.fillRect(-20, -20, this.viewWidth + 40, this.viewHeight + 40);
 
-            // In widescreen, draw subtle ambient cosmic nebula in peripheral background
-            if (this.arenaX > 4 && this.parallaxBgLoaded && this.parallaxBgImg) {
-                ctx.save();
-                ctx.globalAlpha = 0.24;
-                ctx.drawImage(this.parallaxBgImg, 0, 0, this.viewWidth, this.viewHeight);
-                ctx.restore();
-            }
-
-            // 2. Psychedelic Zoom-Feedback Layer (Pwong 2 background tunnel)
-            if (this.feedbackMode !== 'off') {
-                const fbAlpha = this.feedbackMode === 'high' ? 0.4 + pulse * 0.16 : 0.2;
-                ctx.globalAlpha = fbAlpha;
-                ctx.drawImage(this.fbCanvas, 0, 0, this.viewWidth, this.viewHeight);
-                ctx.globalAlpha = 1;
-            }
-
-            // 3. Discreet center line inside arena
-            ctx.strokeStyle = `rgba(255, 255, 255, ${0.08 + bass * 0.1})`;
-            ctx.lineWidth = 1;
-            ctx.setLineDash([6, 10]);
-            ctx.beginPath();
-            ctx.moveTo(this.arenaX, this.arenaY + this.arenaHeight / 2);
-            ctx.lineTo(this.arenaX + this.arenaWidth, this.arenaY + this.arenaHeight / 2);
-            ctx.stroke();
-
-            // Subtle extension outside arena on widescreen
-            if (this.arenaX > 4) {
-                ctx.strokeStyle = 'rgba(255, 255, 255, 0.02)';
-                ctx.beginPath();
-                ctx.moveTo(0, this.arenaY + this.arenaHeight / 2);
-                ctx.lineTo(this.arenaX, this.arenaY + this.arenaHeight / 2);
-                ctx.moveTo(this.arenaX + this.arenaWidth, this.arenaY + this.arenaHeight / 2);
-                ctx.lineTo(this.viewWidth, this.arenaY + this.arenaHeight / 2);
-                ctx.stroke();
-            }
-            ctx.setLineDash([]);
+            this.renderArenaEnvironment(ctx, pulse);
 
             // 4. Light trails (additive)
             ctx.globalCompositeOperation = 'lighter';
@@ -2399,6 +2606,176 @@ window.PWONYX = window.PWONYX || {};
             }
         }
 
+        renderArenaEnvironment(ctx, pulse) {
+            const bass = Audio.bassEnergy || 0;
+            const ax = this.arenaX;
+            const ay = this.arenaY;
+            const aw = this.arenaWidth;
+            const ah = this.arenaHeight;
+            const cx = ax + aw * 0.5;
+            const cy = ay + ah * 0.5;
+            const padNorm = this.player
+                ? ((this.player.x - cx) / Math.max(1, aw * 0.5))
+                : 0;
+
+            // A. Abyssal backdrop (Nano Banana ocean sanctuary) with subtle paddle parallax + audio breath
+            const bgReady = this.arenaAbyssBg && this.arenaAbyssBg.loaded && this.arenaAbyssBg.img;
+            const bgImg = bgReady ? this.arenaAbyssBg.img : (this.parallaxBgLoaded ? this.parallaxBgImg : null);
+            if (bgImg) {
+                ctx.save();
+                const zoom = 1.06 + pulse * 0.018;
+                const iw = bgImg.naturalWidth || bgImg.width || 1376;
+                const ih = bgImg.naturalHeight || bgImg.height || 768;
+                const scale = Math.max(this.viewWidth / iw, this.viewHeight / ih) * zoom;
+                const dw = iw * scale;
+                const dh = ih * scale;
+                const dx = (this.viewWidth - dw) * 0.5 - padNorm * 16;
+                const dy = (this.viewHeight - dh) * 0.5 + Math.sin(this.menuTime * 0.35) * 6;
+                ctx.globalAlpha = 0.58;
+                ctx.drawImage(bgImg, dx, dy, dw, dh);
+                ctx.restore();
+            }
+
+            // Slow-motion abyssal tint when Chrono-Stasis is active
+            if (this.buffs.slow > 0) {
+                ctx.fillStyle = 'rgba(22, 16, 48, 0.22)';
+                ctx.fillRect(0, 0, this.viewWidth, this.viewHeight);
+            }
+
+            // B. Drifting cover-art bioluminescent spores behind the arena
+            this.renderFlowParticleLayer(ctx, 0, -padNorm * 14, 0, this.viewWidth, this.viewHeight, this.menuTime, pulse, 0.48);
+
+            // C. Central 4:3 Abyssal Sanctuary Veil
+            ctx.save();
+            const veilGrad = ctx.createRadialGradient(cx, cy, Math.min(aw, ah) * 0.08, cx, cy, Math.max(aw, ah) * 0.72);
+            veilGrad.addColorStop(0, 'rgba(4, 20, 36, 0.38)');
+            veilGrad.addColorStop(1, 'rgba(2, 6, 15, 0.68)');
+            ctx.fillStyle = veilGrad;
+            ctx.fillRect(ax, ay, aw, ah);
+            ctx.restore();
+
+            // D. Psychedelic Zoom-Feedback Layer (Pwong 2 background tunnel)
+            if (this.feedbackMode !== 'off') {
+                const fbAlpha = this.feedbackMode === 'high' ? 0.34 + pulse * 0.14 : 0.18;
+                ctx.globalAlpha = fbAlpha;
+                ctx.drawImage(this.fbCanvas, 0, 0, this.viewWidth, this.viewHeight);
+                ctx.globalAlpha = 1;
+            }
+
+            // E. Living bioluminescent caustics curtain inside arena ('screen' composite)
+            if (this.arenaCaustics && this.arenaCaustics.loaded && this.arenaCaustics.img) {
+                ctx.save();
+                ctx.beginPath();
+                ctx.rect(ax, ay, aw, ah);
+                ctx.clip();
+                ctx.globalCompositeOperation = 'screen';
+                ctx.globalAlpha = Math.min(0.36, 0.14 + pulse * 0.11 + ((this.comboMultiplier || 1) - 1) * 0.03);
+                const driftX = Math.sin(this.menuTime * 0.24) * 28;
+                const driftY = Math.cos(this.menuTime * 0.19) * 22;
+                ctx.drawImage(this.arenaCaustics.img, ax - 36 + driftX, ay - 36 + driftY, aw + 72, ah + 72);
+                ctx.restore();
+            }
+
+            // F. Central Harmonic Resonance Ring + Half-Court Dividing Filament
+            ctx.save();
+            const ringR = 44 + pulse * 10;
+            ctx.strokeStyle = `rgba(0, 245, 212, ${0.14 + pulse * 0.16})`;
+            ctx.lineWidth = 1.4;
+            ctx.beginPath();
+            ctx.arc(cx, cy, ringR, 0, Math.PI * 2);
+            ctx.stroke();
+
+            ctx.strokeStyle = `rgba(168, 130, 255, ${0.10 + bass * 0.14})`;
+            ctx.lineWidth = 1;
+            ctx.setLineDash([8, 10]);
+            ctx.beginPath();
+            ctx.arc(cx, cy, ringR * 0.68, this.menuTime * 0.5, this.menuTime * 0.5 + Math.PI * 2);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            if ((this.comboMultiplier || 1) > 1.01) {
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.font = "800 13px 'Orbitron', system-ui, sans-serif";
+                ctx.fillStyle = `rgba(255, 209, 102, ${0.38 + pulse * 0.22})`;
+                ctx.fillText(`×${this.comboMultiplier.toFixed(2)}`, cx, cy);
+            }
+
+            ctx.strokeStyle = `rgba(92, 225, 255, ${0.11 + bass * 0.1})`;
+            ctx.lineWidth = 1;
+            ctx.setLineDash([6, 10]);
+            ctx.beginPath();
+            ctx.moveTo(ax, cy);
+            ctx.lineTo(cx - ringR - 6, cy);
+            ctx.moveTo(cx + ringR + 6, cy);
+            ctx.lineTo(ax + aw, cy);
+            ctx.stroke();
+
+            if (ax > 4) {
+                ctx.strokeStyle = 'rgba(92, 225, 255, 0.035)';
+                ctx.beginPath();
+                ctx.moveTo(0, cy);
+                ctx.lineTo(ax, cy);
+                ctx.moveTo(ax + aw, cy);
+                ctx.lineTo(this.viewWidth, cy);
+                ctx.stroke();
+            }
+            ctx.setLineDash([]);
+            ctx.restore();
+
+            // G. Top Goal Barrier Flash
+            if (this.goalFlashTop > 0.01) {
+                ctx.save();
+                const goalGrad = ctx.createLinearGradient(0, ay, 0, ay + 64);
+                goalGrad.addColorStop(0, `rgba(0, 245, 212, ${this.goalFlashTop * 0.45})`);
+                goalGrad.addColorStop(1, 'rgba(0, 245, 212, 0)');
+                ctx.fillStyle = goalGrad;
+                ctx.fillRect(ax, ay, aw, 64);
+                ctx.restore();
+            }
+
+            // H. Bottom Abyssal Aegis Shield Wave Membrane (1P modes)
+            const aegisActive = !this.mode.isTwoPlayer && this.buffs.shield > 0 && this.shieldCharges > 0;
+            if (aegisActive || this.shieldFlashBottom > 0.02) {
+                ctx.save();
+                const baseY = ay + ah - 10;
+                const intensity = aegisActive ? (0.65 + pulse * 0.25 + this.shieldFlashBottom * 0.35) : this.shieldFlashBottom;
+                const shieldGrad = ctx.createLinearGradient(0, baseY - 24, 0, ay + ah);
+                shieldGrad.addColorStop(0, 'rgba(46, 196, 182, 0)');
+                shieldGrad.addColorStop(1, `rgba(46, 196, 182, ${0.22 * intensity})`);
+                ctx.fillStyle = shieldGrad;
+                ctx.fillRect(ax + 6, baseY - 24, aw - 12, 34);
+
+                ctx.strokeStyle = `rgba(92, 245, 226, ${Math.min(1, intensity)})`;
+                ctx.shadowColor = '#2ec4b6';
+                ctx.shadowBlur = 14;
+                ctx.lineWidth = 2.6 + this.shieldFlashBottom * 2.2;
+                ctx.beginPath();
+                const steps = 28;
+                for (let s = 0; s <= steps; s++) {
+                    const t = s / steps;
+                    const wx = ax + 8 + t * (aw - 16);
+                    const wy = baseY + Math.sin(t * Math.PI * 6 + this.menuTime * 7) * (2.5 + pulse * 2.5);
+                    if (s === 0) ctx.moveTo(wx, wy);
+                    else ctx.lineTo(wx, wy);
+                }
+                ctx.stroke();
+
+                if (aegisActive) {
+                    const pips = this.shieldCharges;
+                    const spacing = 14;
+                    const pxStart = cx - ((pips - 1) * spacing) * 0.5;
+                    ctx.fillStyle = '#a6fff4';
+                    for (let c = 0; c < pips; c++) {
+                        ctx.beginPath();
+                        ctx.arc(pxStart + c * spacing, baseY - 12, 3.2, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                }
+                ctx.restore();
+            }
+        }
+
         updateFeedbackBuffer(pulse) {
             const fCtx = this.fbCtx;
             const fw = this.fbCanvas.width;
@@ -2414,8 +2791,8 @@ window.PWONYX = window.PWONYX || {};
             fCtx.drawImage(this.canvas, -fw / 2, -fh / 2, fw, fh);
             fCtx.restore();
 
-            // Darken slightly so colors stay vibrant without saturating to pure white
-            fCtx.fillStyle = 'rgba(5, 5, 14, 0.14)';
+            // Darken cleanly toward deep abyssal obsidian
+            fCtx.fillStyle = 'rgba(2, 7, 16, 0.18)';
             fCtx.fillRect(0, 0, fw, fh);
         }
 
@@ -2427,22 +2804,47 @@ window.PWONYX = window.PWONYX || {};
             const y = pad.y - halfH;
 
             let color = pad.color;
-            if (isPlayer && this.buffs.overdrive > 0) color = '#fee440';
-            else if (isPlayer && this.buffs.sticky > 0) color = '#f15bb5';
+            if (isPlayer && this.buffs.overdrive > 0) color = '#ff6b35';
+            else if (isPlayer && this.buffs.sticky > 0) color = '#ff4da6';
 
+            // Sticky magnetic field arc hovering above player paddle
+            if (isPlayer && this.buffs.sticky > 0) {
+                ctx.save();
+                ctx.strokeStyle = `rgba(255, 77, 166, ${0.35 + pulse * 0.3})`;
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.ellipse(pad.x, y - 4, halfW * 0.85, 8 + pulse * 4, 0, Math.PI, Math.PI * 2);
+                ctx.stroke();
+                ctx.restore();
+            }
+
+            // Bioluminescent plasma capsule body
             ctx.shadowColor = color;
-            ctx.shadowBlur = 16 + pulse * 14;
-            ctx.fillStyle = color;
+            ctx.shadowBlur = 18 + pulse * 14;
+            const capGrad = ctx.createLinearGradient(x, pad.y, x + pad.width, pad.y);
+            capGrad.addColorStop(0, color);
+            capGrad.addColorStop(0.5, isPlayer ? '#80ffdb' : '#ff8ec7');
+            capGrad.addColorStop(1, color);
+            ctx.fillStyle = capGrad;
 
-            // Rounded neon paddle
             ctx.beginPath();
-            ctx.roundRect(x, y, pad.width, pad.height, 7);
+            ctx.roundRect(x, y, pad.width, pad.height, halfH);
             ctx.fill();
 
-            // Inner white energy core
-            ctx.fillStyle = '#ffffff';
+            // Inner pearl filament core
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = 'rgba(244, 255, 255, 0.92)';
             ctx.beginPath();
-            ctx.roundRect(x + 6, y + 3, pad.width - 12, pad.height - 6, 4);
+            ctx.roundRect(x + 8, y + 3.2, Math.max(8, pad.width - 16), Math.max(3, pad.height - 6.4), 4);
+            ctx.fill();
+
+            // Glowing emitter end-nodes
+            ctx.fillStyle = '#ffffff';
+            ctx.shadowColor = color;
+            ctx.shadowBlur = 10;
+            ctx.beginPath();
+            ctx.arc(x + 4.5, pad.y, 2.6, 0, Math.PI * 2);
+            ctx.arc(x + pad.width - 4.5, pad.y, 2.6, 0, Math.PI * 2);
             ctx.fill();
 
             // Draw Ghost Paddle Ammo pips + numeric counter under P1 (or above P2 in 2P Versus)
@@ -2452,7 +2854,7 @@ window.PWONYX = window.PWONYX || {};
                 const pipSpacing = 9;
                 const startX = pad.x - ((visiblePips - 1) * pipSpacing) / 2;
                 const pipY = isPlayer ? pad.y + 15 : pad.y - 15;
-                const pipColor = isPlayer ? '#00f5d4' : '#ff007f';
+                const pipColor = isPlayer ? '#00f5d4' : '#ff4da6';
                 ctx.shadowColor = pipColor;
                 ctx.shadowBlur = 6;
                 ctx.fillStyle = pipColor;
@@ -2478,15 +2880,41 @@ window.PWONYX = window.PWONYX || {};
                 const g = this.ghosts.items[i];
                 if (!g.active) continue;
 
+                const isP2 = g.owner === 'player2';
+                const curveDir = isP2 ? 1 : -1;
+                const hw = g.width * 0.5;
+                const arcDepth = 9;
+
                 ctx.shadowColor = g.color;
                 ctx.shadowBlur = 18;
-                ctx.strokeStyle = g.color;
-                ctx.fillStyle = g.owner === 'player2' ? 'rgba(255, 0, 127, 0.25)' : 'rgba(0, 245, 212, 0.25)';
-                ctx.lineWidth = 2.5;
 
+                // Translucent plasma crescent energy blade
+                const bladeGrad = ctx.createLinearGradient(g.x - hw, g.y, g.x + hw, g.y);
+                bladeGrad.addColorStop(0, 'rgba(0, 245, 212, 0.05)');
+                bladeGrad.addColorStop(0.5, isP2 ? 'rgba(255, 77, 166, 0.34)' : 'rgba(0, 245, 212, 0.36)');
+                bladeGrad.addColorStop(1, 'rgba(0, 245, 212, 0.05)');
+
+                ctx.fillStyle = bladeGrad;
                 ctx.beginPath();
-                ctx.roundRect(g.x - g.width / 2, g.y - g.height / 2, g.width, g.height, 6);
+                ctx.moveTo(g.x - hw, g.y - curveDir * 2);
+                ctx.quadraticCurveTo(g.x, g.y + curveDir * arcDepth * 1.4, g.x + hw, g.y - curveDir * 2);
+                ctx.quadraticCurveTo(g.x, g.y + curveDir * 2, g.x - hw, g.y - curveDir * 2);
+                ctx.closePath();
                 ctx.fill();
+
+                ctx.strokeStyle = g.color;
+                ctx.lineWidth = 2.6;
+                ctx.beginPath();
+                ctx.moveTo(g.x - hw, g.y - curveDir * 1.5);
+                ctx.quadraticCurveTo(g.x, g.y + curveDir * arcDepth * 1.35, g.x + hw, g.y - curveDir * 1.5);
+                ctx.stroke();
+
+                // Hot center spine
+                ctx.strokeStyle = 'rgba(235, 255, 255, 0.85)';
+                ctx.lineWidth = 1.2;
+                ctx.beginPath();
+                ctx.moveTo(g.x - hw * 0.6, g.y + curveDir * 2);
+                ctx.quadraticCurveTo(g.x, g.y + curveDir * (arcDepth * 1.15), g.x + hw * 0.6, g.y + curveDir * 2);
                 ctx.stroke();
             }
             ctx.restore();
@@ -2496,37 +2924,68 @@ window.PWONYX = window.PWONYX || {};
             ctx.save();
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            ctx.font = 'bold 14px system-ui, sans-serif';
 
             for (let i = 0; i < this.powerups.size; i++) {
                 const p = this.powerups.items[i];
                 if (!p.active) continue;
 
                 const def = CFG.POWERUPS[p.type] || CFG.POWERUPS.ammo;
-                const r = p.radius + Math.sin(p.pulse) * 2.5;
+                const r = p.radius + Math.sin(p.pulse) * 2.0;
 
-                ctx.shadowColor = def.color;
-                ctx.shadowBlur = 14;
-                ctx.strokeStyle = def.color;
-                ctx.fillStyle = 'rgba(10, 12, 28, 0.85)';
-                ctx.lineWidth = 2.5;
-
+                // Soft translucent bioluminescent aura (no heavy dark box!)
+                const aura = ctx.createRadialGradient(p.x, p.y, r * 0.15, p.x, p.y, r * 1.65);
+                aura.addColorStop(0, `${def.color}55`);
+                aura.addColorStop(0.55, `${def.color}22`);
+                aura.addColorStop(1, 'rgba(0, 0, 0, 0)');
+                ctx.fillStyle = aura;
                 ctx.beginPath();
-                ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+                ctx.arc(p.x, p.y, r * 1.65, 0, Math.PI * 2);
                 ctx.fill();
-                ctx.stroke();
 
-                ctx.shadowBlur = 0;
+                // Rotating orbital ring
+                ctx.save();
+                ctx.translate(p.x, p.y);
+                ctx.rotate(p.pulse * 0.28);
+                ctx.strokeStyle = def.color;
+                ctx.globalAlpha = 0.78;
+                ctx.lineWidth = 1.6;
+                ctx.setLineDash([7, 5]);
+                ctx.beginPath();
+                ctx.arc(0, 0, r * 1.18, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.setLineDash([]);
+
+                // Two orbiting energy motes
+                ctx.fillStyle = '#ffffff';
+                ctx.globalAlpha = 0.9;
+                ctx.beginPath();
+                ctx.arc(r * 1.18, 0, 2.0, 0, Math.PI * 2);
+                ctx.arc(-r * 1.18, 0, 2.0, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+
+                // Nano Banana icon blended seamlessly via 'screen'
                 const iconImg = this.powerupIcons ? this.powerupIcons[p.type] : null;
                 if (iconImg && iconImg.complete && (iconImg.naturalWidth > 0 || iconImg.width > 0)) {
                     ctx.save();
                     ctx.globalCompositeOperation = 'screen';
-                    const iconSize = r * 2.3;
+                    const iconSize = r * 2.35;
                     ctx.drawImage(iconImg, p.x - iconSize / 2, p.y - iconSize / 2, iconSize, iconSize);
                     ctx.restore();
                 } else {
                     ctx.fillStyle = '#ffffff';
+                    ctx.font = 'bold 14px system-ui, sans-serif';
                     ctx.fillText(def.symbol, p.x, p.y + 1);
+                }
+
+                // Crisp micro-tag below icon for instant readability during swarms
+                if (def.shortLabel) {
+                    ctx.font = "800 9px 'Orbitron', system-ui, sans-serif";
+                    ctx.fillStyle = def.color;
+                    ctx.shadowColor = '#020611';
+                    ctx.shadowBlur = 4;
+                    ctx.fillText(def.shortLabel, p.x, p.y + r * 1.48);
+                    ctx.shadowBlur = 0;
                 }
             }
             ctx.restore();
@@ -2537,14 +2996,14 @@ window.PWONYX = window.PWONYX || {};
             const cx = this.player ? this.player.x : (this.arenaX + this.arenaWidth / 2);
             const cy = this.arenaY + this.arenaHeight - CFG.PADDLE_Y_OFFSET;
 
-            // Converging neon rings around the bottom launcher syncing with the snare build-up
+            // Converging bioluminescent rings around the bottom launcher syncing with the build-up
             for (let ring = 0; ring < 3; ring++) {
                 const phase = ((this.elapsedTime * (2.2 + charge * 3.5) + ring * 0.33) % 1);
                 const rad = (1 - phase) * (95 + charge * 65);
-                const alpha = phase * (0.28 + charge * 0.45);
+                const alpha = phase * (0.3 + charge * 0.45);
 
-                ctx.strokeStyle = ring % 2 === 0 ? `rgba(254, 228, 64, ${alpha})` : `rgba(0, 245, 212, ${alpha})`;
-                ctx.lineWidth = 1.5 + charge * 2.2;
+                ctx.strokeStyle = ring % 2 === 0 ? `rgba(255, 209, 102, ${alpha})` : `rgba(0, 245, 212, ${alpha})`;
+                ctx.lineWidth = 1.6 + charge * 2.2;
                 ctx.beginPath();
                 ctx.arc(cx, cy, Math.max(4, rad), Math.PI, Math.PI * 2);
                 ctx.stroke();
@@ -2554,7 +3013,7 @@ window.PWONYX = window.PWONYX || {};
             if (charge > 0.25) {
                 ctx.font = "800 12px 'Orbitron', system-ui, sans-serif";
                 ctx.textAlign = 'center';
-                ctx.fillStyle = `rgba(254, 228, 64, ${Math.min(1, charge * 1.1)})`;
+                ctx.fillStyle = `rgba(255, 209, 102, ${Math.min(1, charge * 1.1)})`;
                 const pct = Math.min(100, Math.round(charge * 100));
                 ctx.fillText(`⚡ DROP CARREGANDO ${pct}% ⚡`, this.arenaX + this.arenaWidth / 2, this.arenaY + this.arenaHeight - 10);
             }
@@ -2562,34 +3021,70 @@ window.PWONYX = window.PWONYX || {};
         }
 
         renderBalls(ctx, pulse = 0) {
-            const beatScale = 1 + pulse * 0.18;
+            const beatScale = 1 + pulse * 0.16;
+            const padX = this.player ? this.player.x : this.arenaX + this.arenaWidth * 0.5;
+            const padY = this.player ? this.player.y : this.arenaY + this.arenaHeight - CFG.PADDLE_Y_OFFSET;
+
             for (let i = 0; i < this.balls.size; i++) {
                 const b = this.balls.items[i];
                 if (!b.active) continue;
 
                 const r = b.radius * beatScale;
-                const ballColor = b.isCurvedShot ? '#fee440' : b.color;
+                const ballColor = b.stuckTimer > 0
+                    ? '#ff4da6'
+                    : (b.isCurvedShot ? '#ffd166' : b.color);
 
-                // Beat-reactive outer pulse ring when bass hits
-                if (pulse > 0.45) {
-                    ctx.strokeStyle = ballColor;
-                    ctx.globalAlpha = (pulse - 0.35) * 0.65;
-                    ctx.lineWidth = 1.6;
+                // Sticky Magnet tether linking latched ball to paddle core
+                if (b.stuckTimer > 0) {
+                    ctx.save();
+                    ctx.strokeStyle = 'rgba(255, 77, 166, 0.78)';
+                    ctx.lineWidth = 2;
                     ctx.beginPath();
-                    ctx.arc(b.x, b.y, r * 1.45, 0, Math.PI * 2);
+                    ctx.moveTo(padX, padY - 6);
+                    ctx.lineTo(b.x, b.y);
                     ctx.stroke();
-                    ctx.globalAlpha = 1;
+                    ctx.restore();
                 }
 
-                // Colored body + white-hot core (the glow comes from the trail layer)
+                // Soft plasma outer aura
+                const auraGrad = ctx.createRadialGradient(b.x, b.y, r * 0.2, b.x, b.y, r * 2.15);
+                auraGrad.addColorStop(0, `${ballColor}aa`);
+                auraGrad.addColorStop(0.45, `${ballColor}38`);
+                auraGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+                ctx.fillStyle = auraGrad;
+                ctx.beginPath();
+                ctx.arc(b.x, b.y, r * 2.15, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Spinning vortex ring on Magnus curved shots or beat pulses
+                if (b.isCurvedShot || pulse > 0.45) {
+                    ctx.save();
+                    ctx.translate(b.x, b.y);
+                    ctx.rotate(this.menuTime * (b.isCurvedShot ? 9 : 3));
+                    ctx.strokeStyle = ballColor;
+                    ctx.globalAlpha = b.isCurvedShot ? 0.78 : (pulse - 0.35) * 0.65;
+                    ctx.lineWidth = b.isCurvedShot ? 1.8 : 1.4;
+                    if (b.isCurvedShot) ctx.setLineDash([5, 4]);
+                    ctx.beginPath();
+                    ctx.arc(0, 0, r * 1.48, 0, Math.PI * 2);
+                    ctx.stroke();
+                    ctx.restore();
+                }
+
+                // Colored plasma orb + bright pearl core + specular glint
                 ctx.fillStyle = ballColor;
                 ctx.beginPath();
                 ctx.arc(b.x, b.y, r, 0, Math.PI * 2);
                 ctx.fill();
 
+                ctx.fillStyle = '#f2ffff';
+                ctx.beginPath();
+                ctx.arc(b.x, b.y, r * 0.56, 0, Math.PI * 2);
+                ctx.fill();
+
                 ctx.fillStyle = '#ffffff';
                 ctx.beginPath();
-                ctx.arc(b.x, b.y, r * 0.6, 0, Math.PI * 2);
+                ctx.arc(b.x - r * 0.22, b.y - r * 0.22, r * 0.22, 0, Math.PI * 2);
                 ctx.fill();
             }
         }
@@ -2632,36 +3127,43 @@ window.PWONYX = window.PWONYX || {};
         renderReactiveBorder(ctx, pulse, high) {
             ctx.save();
             const flash = this.chromaticFlash > 0.1;
-            const primaryColor = flash ? '#ff0055' : '#00f5d4';
-            const glowBlur = 8 + pulse * 14 + high * 8;
+            const primaryColor = flash ? '#ff2a6d' : '#00f5d4';
+            const accentColor = flash ? '#ff2a6d' : '#5ce1ff';
+            const glowBlur = 10 + pulse * 14 + high * 8;
 
             const ax = this.arenaX;
             const ay = this.arenaY;
             const aw = this.arenaWidth;
             const ah = this.arenaHeight;
 
-            // 1. Physical Left & Right Neon Laser Walls (Bouncers)
-            ctx.lineWidth = 3.0 + pulse * 2.0;
+            // 1. Physical Left & Right Dual-Core Plasma Conduits (Bouncers)
+            ctx.lineWidth = 3.2 + pulse * 2.0;
             ctx.strokeStyle = primaryColor;
             ctx.shadowColor = primaryColor;
             ctx.shadowBlur = glowBlur;
 
-            // Left Wall
             ctx.beginPath();
             ctx.moveTo(ax, ay);
             ctx.lineTo(ax, ay + ah);
-            ctx.stroke();
-
-            // Right Wall
-            ctx.beginPath();
             ctx.moveTo(ax + aw, ay);
             ctx.lineTo(ax + aw, ay + ah);
+            ctx.stroke();
+
+            // Inner white pearl core filament
+            ctx.shadowBlur = 0;
+            ctx.lineWidth = 1.0;
+            ctx.strokeStyle = flash ? 'rgba(255, 220, 232, 0.8)' : 'rgba(218, 255, 252, 0.85)';
+            ctx.beginPath();
+            ctx.moveTo(ax, ay + 4);
+            ctx.lineTo(ax, ay + ah - 4);
+            ctx.moveTo(ax + aw, ay + 4);
+            ctx.lineTo(ax + aw, ay + ah - 4);
             ctx.stroke();
 
             // 2. Corner Brackets & Accent Markers
             const bracketLen = 28;
             ctx.lineWidth = 2.5;
-            ctx.strokeStyle = flash ? '#ff0055' : '#fee440';
+            ctx.strokeStyle = flash ? '#ff2a6d' : ((this.isBarrageActive || Audio.buildUpCharge > 0.4) ? '#ffd166' : accentColor);
             ctx.shadowColor = ctx.strokeStyle;
             ctx.shadowBlur = 10;
 
@@ -2693,13 +3195,24 @@ window.PWONYX = window.PWONYX || {};
             ctx.lineTo(ax + aw, ay + ah - bracketLen);
             ctx.stroke();
 
-            // 3. Subtle Goal Lines (Top and Bottom)
+            // 3. Top Goal Matrix Filament (1P barrier glow) & Bottom Defense Line
+            ctx.shadowBlur = !this.mode.isTwoPlayer ? (6 + this.goalFlashTop * 14) : 0;
+            ctx.shadowColor = '#00f5d4';
+            ctx.lineWidth = !this.mode.isTwoPlayer ? (1.8 + this.goalFlashTop * 2.2) : 1.0;
+            ctx.strokeStyle = !this.mode.isTwoPlayer
+                ? `rgba(0, 245, 212, ${0.32 + pulse * 0.22 + this.goalFlashTop * 0.46})`
+                : `rgba(255, 255, 255, ${0.12 + pulse * 0.14})`;
+            ctx.setLineDash(this.mode.isTwoPlayer ? [4, 8] : [14, 6]);
+            ctx.beginPath();
+            ctx.moveTo(ax + 6, ay + 4);
+            ctx.lineTo(ax + aw - 6, ay + 4);
+            ctx.stroke();
+
+            ctx.shadowBlur = 0;
             ctx.lineWidth = 1;
-            ctx.strokeStyle = `rgba(255, 255, 255, ${0.1 + pulse * 0.15})`;
+            ctx.strokeStyle = `rgba(92, 225, 255, ${0.14 + pulse * 0.14})`;
             ctx.setLineDash([4, 8]);
             ctx.beginPath();
-            ctx.moveTo(ax, ay);
-            ctx.lineTo(ax + aw, ay);
             ctx.moveTo(ax, ay + ah);
             ctx.lineTo(ax + aw, ay + ah);
             ctx.stroke();
@@ -2708,14 +3221,14 @@ window.PWONYX = window.PWONYX || {};
             // 4. Peripheral side ambiance when on widescreen (ax > 4)
             if (ax > 4) {
                 const leftGrad = ctx.createLinearGradient(0, 0, ax, 0);
-                leftGrad.addColorStop(0, 'rgba(2, 4, 12, 0.65)');
-                leftGrad.addColorStop(1, 'rgba(2, 4, 12, 0)');
+                leftGrad.addColorStop(0, 'rgba(2, 6, 17, 0.72)');
+                leftGrad.addColorStop(1, 'rgba(2, 6, 17, 0)');
                 ctx.fillStyle = leftGrad;
                 ctx.fillRect(0, 0, ax, this.viewHeight);
 
                 const rightGrad = ctx.createLinearGradient(ax + aw, 0, this.viewWidth, 0);
-                rightGrad.addColorStop(0, 'rgba(2, 4, 12, 0)');
-                rightGrad.addColorStop(1, 'rgba(2, 4, 12, 0.65)');
+                rightGrad.addColorStop(0, 'rgba(2, 6, 17, 0)');
+                rightGrad.addColorStop(1, 'rgba(2, 6, 17, 0.72)');
                 ctx.fillStyle = rightGrad;
                 ctx.fillRect(ax + aw, 0, this.viewWidth - (ax + aw), this.viewHeight);
             }
