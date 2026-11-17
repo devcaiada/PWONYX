@@ -332,7 +332,7 @@ window.PWONYX = window.PWONYX || {};
             setCachedText('score', 'hud-score', game.score.toLocaleString('pt-BR'));
             setCachedText('balls', 'hud-balls', String(game.balls.countActive()));
             if (game.player) {
-                setCachedText('ammo', 'hud-ammo', String(game.player.ghostAmmo));
+                setCachedText('ammo', 'hud-ammo', `${game.player.ghostAmmo}/15`);
             }
 
             const totalDur = game.matchDuration || game.mode.duration || 134;
@@ -368,8 +368,14 @@ window.PWONYX = window.PWONYX || {};
 
             const b = game.buffs;
             const buffs = [];
+            if (game.arenaEvent === 'inferno' && game.arenaEventTimer > 0) {
+                buffs.push(`<span class="buff" style="--c:#ff3b00">🔥 INFERNO ${Math.ceil(game.arenaEventTimer)}s</span>`);
+            } else if (game.arenaEvent === 'slowmo' && game.arenaEventTimer > 0) {
+                buffs.push(`<span class="buff" style="--c:#00d9ff">⏳ SLOW-MO ${Math.ceil(game.arenaEventTimer)}s</span>`);
+            } else if (b.slow > 0) {
+                buffs.push(`<span class="buff" style="--c:#ffd166"><img src="assets/icons/powerup-slow.png" alt="" class="pwonyx-icon buff-icon" /> ${b.slow.toFixed(0)}s</span>`);
+            }
             if (b.wide > 0) buffs.push(`<span class="buff" style="--c:#00bbf9"><img src="assets/icons/powerup-larger.png" alt="" class="pwonyx-icon buff-icon" /> ${b.wide.toFixed(0)}s</span>`);
-            if (b.slow > 0) buffs.push(`<span class="buff" style="--c:#ffd166"><img src="assets/icons/powerup-slow.png" alt="" class="pwonyx-icon buff-icon" /> ${b.slow.toFixed(0)}s</span>`);
             if (b.sticky > 0) buffs.push(`<span class="buff" style="--c:#ff4da6"><img src="assets/icons/powerup-sticky.png" alt="" class="pwonyx-icon buff-icon" /> ${b.sticky.toFixed(0)}s</span>`);
             if (b.overdrive > 0) buffs.push(`<span class="buff" style="--c:#ff6b35"><img src="assets/icons/powerup-overdrive.png" alt="" class="pwonyx-icon buff-icon" /> 2× ${b.overdrive.toFixed(0)}s</span>`);
             if (b.shield > 0) buffs.push(`<span class="buff" style="--c:#2ec4b6"><img src="assets/icons/powerup-shield.png" alt="" class="pwonyx-icon buff-icon" /> ${game.shieldCharges || 1}🛡️ ${b.shield.toFixed(0)}s</span>`);

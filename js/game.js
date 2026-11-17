@@ -18,6 +18,23 @@ window.PWONYX = window.PWONYX || {};
         '#00f5d4', '#5ce1ff', '#64dfdf', '#a882ff', '#ff5ca8', '#ffd166', '#80ffdb'
     ];
 
+    function hslToColorInfo(h, s, l) {
+        const hue = ((h % 360) + 360) % 360;
+        const sat = Math.max(0, Math.min(100, s)) / 100;
+        const lig = Math.max(0, Math.min(100, l)) / 100;
+        const a = sat * Math.min(lig, 1 - lig);
+        const comp = (n) => {
+            const k = (n + hue / 30) % 12;
+            const color = lig - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
+            return Math.round(255 * color);
+        };
+        const r = comp(0);
+        const g = comp(8);
+        const b = comp(4);
+        const hex = `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+        return { hex, rgb: `${r}, ${g}, ${b}` };
+    }
+
     class PwonyxGame {
         constructor(canvas, callbacks) {
             this.canvas = canvas;
@@ -186,6 +203,16 @@ window.PWONYX = window.PWONYX || {};
             this.comboMultiplier = 1.0;
             this.shieldCharges = 0;
 
+            // Arena Pwong 2 dynamic theme & mechanics state
+            this.baseHue = 175;
+            this.themeHue = 175;
+            this.themeColor = '#00f5d4';
+            this.themeRgb = '0, 245, 212';
+            this.arenaEvent = 'normal'; // 'normal' | 'slowmo' | 'inferno'
+            this.arenaEventTimer = 0;
+            this.arenaEventCooldown = 15.0;
+            this.nextArenaEventType = 'slowmo';
+
             // Ball Barrage State (Climax / Beat-drop stream sequence)
             this.barrageQueue = [];
             this.barrageTimer = 0;
@@ -214,7 +241,7 @@ window.PWONYX = window.PWONYX || {};
                 width: CFG.PADDLE_BASE_WIDTH,
                 height: CFG.PADDLE_HEIGHT,
                 ghostAmmo: 2,
-                maxGhostAmmo: 99,
+                maxGhostAmmo: 15,
                 distanceTraveled: 0,
                 color: '#00f5d4'
             };
@@ -227,6 +254,7 @@ window.PWONYX = window.PWONYX || {};
                 width: CFG.PADDLE_BASE_WIDTH,
                 height: CFG.PADDLE_HEIGHT,
                 ghostAmmo: 2,
+                maxGhostAmmo: 15,
                 color: '#ff007f'
             };
 
@@ -514,6 +542,11 @@ window.PWONYX = window.PWONYX || {};
                         this.triggerBallBarrage(null, 'manual');
                     }
                 }
+                if (e.code === 'KeyI') {
+                    if (this.state === 'playing') {
+                        this.triggerArenaEvent('inferno', 8.0);
+                    }
+                }
                 if (e.code === 'KeyP' || e.code === 'Escape') {
                     if (this.state === 'playing' || this.state === 'paused') {
                         this.togglePause();
@@ -545,8 +578,8 @@ window.PWONYX = window.PWONYX || {};
         recalculatePaddleStats() {
             const extLevel = this.upgrades.paddleSize || 0;
             const baseW = CFG.PADDLE_BASE_WIDTH + extLevel * 12;
-            const wideBonus = this.buffs.wide > 0 ? 1.5 : 1.0;
-            this.player.width = Math.min(280, baseW * wideBonus);
+            const wideBonus = this.buffs.wide > 0 ? 1.6 : 1.0;
+            this.player.width = Math.min(310, baseW * wideBonus);
             this.opponent.width = this.mode.isTwoPlayer
                 ? baseW
                 : CFG.PADDLE_BASE_WIDTH + (this.mode.maxBalls > 14 ? 18 : 6);
@@ -565,7 +598,7 @@ window.PWONYX = window.PWONYX || {};
                     cy + (Math.random() - 0.5) * 140,
                     Math.cos(angle) * speed,
                     Math.sin(angle) * speed,
-                    NEON_BALL_COLORS[i % NEON_BALL_COLORS.length]
+                    this.themeColor || '#00f5d4'
                 );
             }
         }
@@ -639,9 +672,8 @@ window.PWONYX = window.PWONYX || {};
             this.buffs.overdrive = 0;
             this.buffs.shield = 0;
 
-            const mastUpgrade = this.upgrades.powerupDuration || 0;
-            const baseMaxAmmo = typeof this.mode.maxAmmo === 'number' ? this.mode.maxAmmo : 99;
-            const startAmmo = typeof this.mode.startAmmo === 'number' ? this.mode.startAmmo : 2;
+            const baseMaxAmmo = 15;
+            const startAmmo = Math.min(baseMaxAmmo, typeof this.mode.startAmmo === 'number' ? this.mode.startAmmo : 2);
             const cx = this.arenaX + this.arenaWidth / 2;
             this.player.x = cx;
             this.player.prevX = cx;
@@ -649,7 +681,7 @@ window.PWONYX = window.PWONYX || {};
             this.player.y = this.arenaY + this.arenaHeight - CFG.PADDLE_Y_OFFSET;
             this.player.distanceTraveled = 0;
             this.player.ghostAmmo = startAmmo;
-            this.player.maxGhostAmmo = baseMaxAmmo + mastUpgrade * 10;
+            this.player.maxGhostAmmo = baseMaxAmmo;
 
             this.opponent.x = cx;
             this.opponent.prevX = cx;
@@ -657,6 +689,15 @@ window.PWONYX = window.PWONYX || {};
             this.opponent.ghostAmmo = this.mode.isTwoPlayer ? startAmmo : 0;
             this.opponent.maxGhostAmmo = baseMaxAmmo;
             this.versusSpawnToggle = false;
+
+            this.baseHue = 175;
+            this.themeHue = 175;
+            this.themeColor = '#00f5d4';
+            this.themeRgb = '0, 245, 212';
+            this.arenaEvent = 'normal';
+            this.arenaEventTimer = 0;
+            this.arenaEventCooldown = 15.0;
+            this.nextArenaEventType = 'slowmo';
 
             this.recalculatePaddleStats();
 
@@ -684,7 +725,8 @@ window.PWONYX = window.PWONYX || {};
                 Audio.setLowPassEffect('paused');
             } else if (this.state === 'paused') {
                 this.state = 'playing';
-                Audio.setLowPassEffect(this.buffs.slow > 0 ? 'slowmo' : 'normal');
+                const slowActive = this.buffs.slow > 0 || (this.arenaEvent === 'slowmo' && this.arenaEventTimer > 0);
+                Audio.setLowPassEffect(slowActive ? 'slowmo' : 'normal');
             }
             if (this.callbacks.onStateChange) {
                 this.callbacks.onStateChange(this.state, this.mode);
@@ -713,7 +755,7 @@ window.PWONYX = window.PWONYX || {};
             const vx = Math.sin(angleOffset) * speed;
             const dirY = fromTop ? 1 : -1;
             const vy = dirY * Math.abs(Math.cos(angleOffset) * speed);
-            const color = customColor || NEON_BALL_COLORS[this.balls.countActive() % NEON_BALL_COLORS.length];
+            const color = customColor || this.themeColor || '#00f5d4';
 
             const launcherPad = fromTop ? this.opponent : this.player;
             const baseX = customX !== null
@@ -755,12 +797,110 @@ window.PWONYX = window.PWONYX || {};
             return b;
         }
 
+        triggerArenaEvent(type, duration) {
+            if (type !== 'inferno' && type !== 'slowmo') return;
+            const prevEvent = this.arenaEvent;
+            this.arenaEvent = type;
+            this.arenaEventTimer = duration || (type === 'inferno' ? 8.0 : 6.5);
+            this.arenaEventCooldown = this.arenaEventTimer + 12.0 + Math.random() * 5.0;
+
+            if (type === 'inferno') {
+                if (this.buffs.slow > 0) {
+                    this.buffs.slow = 0;
+                }
+                Audio.setLowPassEffect('normal');
+                this.screenShake = Math.max(this.screenShake, 7);
+                this.chromaticFlash = Math.max(this.chromaticFlash, 0.85);
+                this.texts.spawn(
+                    this.arenaX + this.arenaWidth / 2,
+                    this.arenaY + this.arenaHeight * 0.28,
+                    '🔥 INFERNO MODE! 🔥',
+                    '#ff4d00',
+                    22,
+                    1.4
+                );
+                this.particles.shockwave(this.arenaX + this.arenaWidth / 2, this.arenaY + this.arenaHeight / 2, '#ff3b00', 140);
+                if (prevEvent !== 'inferno' && Audio && Audio.playScoreGoal) {
+                    Audio.playScoreGoal();
+                }
+            } else if (type === 'slowmo') {
+                Audio.setLowPassEffect('slowmo');
+                this.texts.spawn(
+                    this.arenaX + this.arenaWidth / 2,
+                    this.arenaY + this.arenaHeight * 0.28,
+                    '⏳ SLOW MOTION TIME! ⏳',
+                    '#00d9ff',
+                    20,
+                    1.3
+                );
+                this.particles.shockwave(this.arenaX + this.arenaWidth / 2, this.arenaY + this.arenaHeight / 2, '#00d9ff', 120);
+            }
+        }
+
+        updateArenaThemeAndMechanics(dt) {
+            this.baseHue = (this.baseHue + dt * 12) % 360;
+
+            if (this.arenaEvent !== 'normal') {
+                this.arenaEventTimer -= dt;
+                if (this.arenaEventTimer <= 0) {
+                    const ended = this.arenaEvent;
+                    this.arenaEvent = 'normal';
+                    this.arenaEventTimer = 0;
+                    if (ended === 'slowmo' && this.buffs.slow <= 0) {
+                        Audio.setLowPassEffect('normal');
+                    }
+                    this.arenaEventCooldown = 13.0 + Math.random() * 5.0;
+                }
+            } else if (this.buffs.slow <= 0) {
+                this.arenaEventCooldown -= dt;
+                if (this.arenaEventCooldown <= 0) {
+                    const nextType = this.nextArenaEventType || 'slowmo';
+                    this.nextArenaEventType = nextType === 'slowmo' ? 'inferno' : 'slowmo';
+                    this.triggerArenaEvent(nextType, nextType === 'inferno' ? 8.0 : 6.5);
+                }
+            }
+
+            let targetHue = this.baseHue;
+            let sat = 95;
+            let lig = 56;
+            let lerpRate = 4.0;
+            if (this.arenaEvent === 'inferno') {
+                targetHue = 14;
+                sat = 100;
+                lig = 52;
+                lerpRate = 7.5;
+            } else if (this.arenaEvent === 'slowmo' || this.buffs.slow > 0) {
+                targetHue = 194;
+                sat = 96;
+                lig = 55;
+                lerpRate = 7.5;
+            }
+
+            const hueDiff = ((targetHue - this.themeHue + 540) % 360) - 180;
+            this.themeHue = (this.themeHue + hueDiff * Math.min(1, dt * lerpRate) + 360) % 360;
+
+            const info = hslToColorInfo(this.themeHue, sat, lig);
+            this.themeColor = info.hex;
+            this.themeRgb = info.rgb;
+
+            for (let i = 0; i < this.balls.size; i++) {
+                const b = this.balls.items[i];
+                if (b.active) {
+                    b.color = this.themeColor;
+                }
+            }
+        }
+
         /**
          * Climax Ball Barrage (Carreira de Bolinhas):
-         * Queues a rapid-fire succession of neon rainbow balls launched from behind the paddle,
+         * Queues a rapid-fire succession of balls launched from behind the paddle,
          * accompanied by screen shake, chromatic flashes, particle flares, and ascending laser SFX.
          */
         triggerBallBarrage(count = null, reason = 'climax') {
+            if (reason !== 'manual') {
+                this.triggerArenaEvent('inferno', 8.0);
+            }
+
             const barrageCount = count || (
                 this.mode.id === 'easy' ? 6 :
                 this.mode.id === 'medium' ? 8 :
@@ -779,38 +919,23 @@ window.PWONYX = window.PWONYX || {};
                 Math.max(this.targetBallCount, this.balls.countActive() + Math.min(6, barrageCount))
             );
 
-            const barrageColors = [
-                '#00f5d4', // Cyan
-                '#00bbf9', // Electric Sky
-                '#fee440', // Golden Yellow
-                '#f15bb5', // Hot Pink
-                '#ff007f', // Rose Neon
-                '#9b5de5', // Electric Purple
-                '#70e000', // Acid Lime
-                '#ff9e00', // Sun Orange
-                '#ff5400', // Hyper Coral
-                '#e0aaff', // Violet Pastel
-                '#00f5d4',
-                '#fee440'
-            ];
-
             this.barrageQueue = [];
             const baseSpeed = this.getSurvivalBaseSpeed();
             const launchSpeed = Math.min(
                 this.mode.maxBallSpeed * CFG.SPEED_SCALE * 0.96,
                 Math.max(360, baseSpeed * CFG.SPEED_SCALE * 1.15)
             );
+            const launchColor = this.themeColor || '#00f5d4';
 
             for (let i = 0; i < barrageCount; i++) {
                 const t = barrageCount > 1 ? i / (barrageCount - 1) : 0.5;
                 const fanAngle = (t - 0.5) * 0.68 + (Math.random() - 0.5) * 0.12;
                 const xSpread = (t - 0.5) * Math.min(110, this.player.width * 0.75);
                 const speed = launchSpeed + (Math.random() - 0.5) * 45;
-                const color = barrageColors[i % barrageColors.length];
 
                 this.barrageQueue.push({
                     delay: i === 0 ? 0 : 0.085, // 85ms between each ball in the rapid-fire stream
-                    color: color,
+                    color: null, // uses live this.themeColor when launched
                     speed: speed,
                     angle: fanAngle,
                     xSpread: xSpread,
@@ -818,31 +943,23 @@ window.PWONYX = window.PWONYX || {};
                 });
             }
 
-            // Visual "Show de Luzes" fanfare:
+            // Visual fanfare:
             this.screenShake = 8;
             this.chromaticFlash = 1.0;
             this.texts.spawn(
                 this.arenaX + this.arenaWidth / 2,
                 this.arenaY + this.arenaHeight * 0.40,
                 '⚡ CARREIRA DE BOLINHAS! ⚡',
-                '#00f5d4',
+                launchColor,
                 22,
                 1.5
-            );
-            this.texts.spawn(
-                this.arenaX + this.arenaWidth / 2,
-                this.arenaY + this.arenaHeight * 0.40 + 32,
-                '★ SHOW DE LUZES • CLÍMAX ★',
-                '#fee440',
-                15,
-                1.3
             );
 
             // Initial shockwave and particle blast at launcher
             const padX = this.player ? this.player.x : this.arenaX + this.arenaWidth / 2;
             const launchY = this.player ? (this.player.y - this.player.height / 2 - 8) : (this.arenaY + this.arenaHeight - 48);
-            this.particles.shockwave(padX, launchY, '#00f5d4', 85);
-            this.particles.burst(padX, launchY, 28, '#ffd166', 100, 320, 4);
+            this.particles.shockwave(padX, launchY, launchColor, 85);
+            this.particles.burst(padX, launchY, 28, launchColor, 100, 320, 4);
 
             if (Audio && Audio.playScoreGoal) {
                 Audio.playScoreGoal();
@@ -1106,6 +1223,7 @@ window.PWONYX = window.PWONYX || {};
             }
             this.menuTime += dt;
             this.advanceFlowParticles(dt, 0.35);
+            this.updateArenaThemeAndMechanics(dt);
 
             // Sync match duration to current track length (Chaoz Fantasy ~133.9s or loaded audio)
             const liveDuration = (Audio && Audio.getTrackDuration)
@@ -1137,7 +1255,7 @@ window.PWONYX = window.PWONYX || {};
             if (hadWide && this.buffs.wide === 0) {
                 this.recalculatePaddleStats();
             }
-            if (hadSlow && this.buffs.slow === 0) {
+            if (hadSlow && this.buffs.slow === 0 && this.arenaEvent !== 'slowmo') {
                 Audio.setLowPassEffect('normal');
             }
             if (hadSticky && this.buffs.sticky === 0) {
@@ -1349,8 +1467,8 @@ window.PWONYX = window.PWONYX || {};
                     }
 
                     const candidateTypes = this.mode.isTwoPlayer
-                        ? ['wide', 'slow', 'sticky', 'overdrive']
-                        : ['wide', 'slow', 'sticky', 'overdrive', 'shield'];
+                        ? ['wide', 'wide', 'sticky', 'sticky', 'slow', 'overdrive']
+                        : ['wide', 'wide', 'sticky', 'sticky', 'slow', 'overdrive', 'shield'];
                     const availableTypes = candidateTypes.filter(t => !(this.buffs[t] > 0));
                     const poolTypes = availableTypes.length > 0 ? availableTypes : candidateTypes;
                     const pick = poolTypes[Math.floor(Math.random() * poolTypes.length)];
@@ -1376,7 +1494,7 @@ window.PWONYX = window.PWONYX || {};
                 }
             }
 
-            // --- Update Falling Powerups ---
+            // --- Update Falling Powerups (strictly collected by paddles, never Ghost shots) ---
             for (let i = 0; i < this.powerups.size; i++) {
                 const p = this.powerups.items[i];
                 if (!p.active) continue;
@@ -1386,7 +1504,6 @@ window.PWONYX = window.PWONYX || {};
 
                 if (p.x < this.arenaX + 25 || p.x > this.arenaX + this.arenaWidth - 25) p.vx *= -1;
 
-                // Check collection by Player 1, Player 2 (2P), or ascending Ghost Paddles (Pwong 2 sniping)
                 if (
                     Math.abs(p.y - this.player.y) <= p.radius + this.player.height &&
                     Math.abs(p.x - this.player.x) <= halfP1 + p.radius
@@ -1400,29 +1517,17 @@ window.PWONYX = window.PWONYX || {};
                 ) {
                     this.collectPowerUp(p, 'player2');
                     p.active = false;
-                } else {
-                    for (let gIdx = 0; gIdx < this.ghosts.size; gIdx++) {
-                        const g = this.ghosts.items[gIdx];
-                        if (!g.active) continue;
-                        if (
-                            Math.abs(p.y - g.y) <= p.radius + g.height &&
-                            Math.abs(p.x - g.x) <= g.width / 2 + p.radius
-                        ) {
-                            this.collectPowerUp(p, g.owner);
-                            p.active = false;
-                            break;
-                        }
-                    }
-                    if (p.active && (p.y > this.arenaY + this.arenaHeight + 20 || p.y < this.arenaY - 20)) {
-                        p.active = false;
-                    }
+                } else if (p.y > this.arenaY + this.arenaHeight + 20 || p.y < this.arenaY - 20) {
+                    p.active = false;
                 }
             }
 
             // --- Update Balls (True Anti-Tunneling Sub-Stepping + Damped Magnus Physics) ---
-            const slowMult = this.buffs.slow > 0 ? 0.54 : 1.0;
+            const isInferno = this.arenaEvent === 'inferno';
+            const isSlowMo = this.buffs.slow > 0 || (this.arenaEvent === 'slowmo' && this.arenaEventTimer > 0);
+            const slowMult = isInferno ? 1.62 : (isSlowMo ? 0.46 : 1.0);
             const curveUpgrade = 1 + (this.upgrades.curvePower || 0) * 0.18;
-            const maxAllowedSpeed = this.mode.maxBallSpeed * CFG.SPEED_SCALE * 1.15;
+            const maxAllowedSpeed = this.mode.maxBallSpeed * CFG.SPEED_SCALE * (isInferno ? 1.55 : 1.15);
 
             for (let i = 0; i < this.balls.size; i++) {
                 const b = this.balls.items[i];
@@ -1431,24 +1536,12 @@ window.PWONYX = window.PWONYX || {};
                 b.px = b.x;
                 b.py = b.y;
 
-                // Sticky Magnet Latch: holds ball briefly on Player 1 paddle, then auto-launches (or fires early on click/Space)
-                if (b.stuckTimer > 0) {
-                    b.stuckTimer -= dt;
-                    b.x = Math.max(
-                        this.arenaX + 10 + b.radius,
-                        Math.min(this.arenaX + this.arenaWidth - 10 - b.radius, this.player.x + (b.stuckOffsetX || 0))
-                    );
-                    b.y = this.player.y - this.player.height / 2 - b.radius - 2;
-                    if (b.stuckTimer <= 0) {
-                        this.releaseStuckBall(b);
-                    }
-                    continue;
-                }
-
-                // Magnet/Sticky buff pulls incoming downward balls slightly toward player paddle X
-                if (this.buffs.sticky > 0 && b.vy > 0 && b.y > this.arenaY + this.arenaHeight * 0.42) {
-                    const pull = (this.player.x - b.x) * 3.6;
-                    b.vx += pull * dt;
+                // Magnet buff gently bends descending balls toward the player paddle (imperfect attraction)
+                if (this.buffs.sticky > 0 && b.vy > 0 && b.y > this.arenaY + this.arenaHeight * 0.22) {
+                    const dx = this.player.x - b.x;
+                    const maxPull = 540;
+                    const pullAccel = Math.max(-maxPull, Math.min(maxPull, dx * 4.0));
+                    b.vx += pullAccel * dt;
                 }
 
                 // Determine sub-steps based on travel distance so fast balls never tunnel past thin paddles
@@ -1707,24 +1800,10 @@ window.PWONYX = window.PWONYX || {};
                 this.score += defPts;
             }
 
-            // Current speed scales slightly up to mode.maxBallSpeed
+            // Current speed scales slightly up to mode.maxBallSpeed (or 1.55x in Inferno Mode)
             const currentSpeed = Math.hypot(ball.vx, ball.vy);
-
-            // Sticky/Magnet latch on Player 1 paddle for aimed counter-shots
-            if (dirY < 0 && this.buffs.sticky > 0) {
-                ball.stuckTimer = 0.16;
-                ball.stuckOffsetX = Math.max(-halfW * 0.85, Math.min(halfW * 0.85, ball.x - paddle.x));
-                ball.savedSpeed = currentSpeed;
-                ball.vx = 0;
-                ball.vy = 0;
-                ball.spin = 0;
-                ball.y = paddle.y - paddle.height / 2 - ball.radius - 2;
-                this.particles.burst(ball.x, ball.y, 12, '#ff4da6', 50, 180, 2.8);
-                Audio.playBounce(1.08, false, isRhythmHit);
-                return;
-            }
-
-            const nextSpeed = Math.min(this.mode.maxBallSpeed * CFG.SPEED_SCALE, currentSpeed * beatSpeedBoost);
+            const speedCap = this.mode.maxBallSpeed * CFG.SPEED_SCALE * (this.arenaEvent === 'inferno' ? 1.55 : 1.0);
+            const nextSpeed = Math.min(speedCap, currentSpeed * beatSpeedBoost);
             const padVx = dirY < 0 ? (paddle.smoothVx ?? paddle.vx) : paddle.vx;
 
             // Bounce angle up to 62 degrees at paddle extremes
@@ -1742,8 +1821,9 @@ window.PWONYX = window.PWONYX || {};
                 }
             }
 
-            // Impart Magnus Spin from paddle movement + edge hit
-            const spinInput = (-padVx * 0.65 + relIntersect * 220) * curveMult;
+            // Impart Magnus Spin from paddle movement + edge hit (+ slight chaos in Inferno Mode)
+            const infernoChaos = this.arenaEvent === 'inferno' ? (Math.random() - 0.5) * 260 : 0;
+            const spinInput = (-padVx * 0.65 + relIntersect * 220) * curveMult + infernoChaos;
             ball.spin = Math.max(-650, Math.min(650, spinInput));
             ball.isCurvedShot = dirY < 0 && Math.abs(ball.spin) > 240;
 
@@ -1815,10 +1895,10 @@ window.PWONYX = window.PWONYX || {};
         }
 
         /**
-         * Returns the amount of Ghost Ammo granted per pickup (+10 per item collected).
+         * Returns the amount of Ghost Ammo granted per pickup (+5 per item collected).
          */
         getCurrentAmmoPickupAmount() {
-            return typeof this.mode.ammoPerPickup === 'number' ? this.mode.ammoPerPickup : 10;
+            return typeof this.mode.ammoPerPickup === 'number' ? this.mode.ammoPerPickup : 5;
         }
 
         collectPowerUp(p, collector = 'player1') {
@@ -1832,18 +1912,22 @@ window.PWONYX = window.PWONYX || {};
             Audio.playPowerUp();
 
             if (p.type === 'ammo') {
+                const maxAmmo = 15;
+                const prevAmmo = targetPad.ghostAmmo;
                 const gain = this.getCurrentAmmoPickupAmount();
-                const maxAmmo = targetPad.maxGhostAmmo || 99;
-                targetPad.ghostAmmo = Math.min(maxAmmo, targetPad.ghostAmmo + gain);
-                this.texts.spawn(p.x, p.y + (collector === 'player2' ? 18 : -16), `+${gain} GHOST AMMO!`, def.color, 16, 1.0);
+                targetPad.ghostAmmo = Math.min(maxAmmo, prevAmmo + gain);
+                const actualGain = targetPad.ghostAmmo - prevAmmo;
+                const ammoLabel = actualGain > 0 ? `+${actualGain} GHOST AMMO!` : 'MAX 15 AMMO!';
+                this.texts.spawn(p.x, p.y + (collector === 'player2' ? 18 : -16), ammoLabel, def.color, 16, 1.0);
             } else {
                 this.texts.spawn(p.x, p.y + (collector === 'player2' ? 18 : -16), def.label, def.color, 16, 1.0);
                 if (p.type === 'wide') {
                     this.buffs.wide = def.baseDuration * durMult;
                     this.recalculatePaddleStats();
                 } else if (p.type === 'slow') {
-                    this.buffs.slow = def.baseDuration * durMult;
-                    Audio.setLowPassEffect('slowmo');
+                    const dur = def.baseDuration * durMult;
+                    this.buffs.slow = dur;
+                    this.triggerArenaEvent('slowmo', dur);
                 } else if (p.type === 'sticky') {
                     this.buffs.sticky = def.baseDuration * durMult;
                 } else if (p.type === 'overdrive') {
@@ -2024,7 +2108,7 @@ window.PWONYX = window.PWONYX || {};
             for (let i = 0; i < this.balls.size; i++) {
                 const b = this.balls.items[i];
                 if (!b.active) continue;
-                const color = b.isCurvedShot ? '#fee440' : b.color;
+                const color = this.themeColor || b.color || '#00f5d4';
                 const px = b.px === undefined ? b.x : b.px;
                 const py = b.py === undefined ? b.y : b.py;
 
@@ -2568,11 +2652,11 @@ window.PWONYX = window.PWONYX || {};
                 ctx.translate(sx, sy);
             }
 
-            // 1. Abyssal obsidian base + cohesive Nano Banana environment
-            ctx.fillStyle = '#020611';
+            // 1. Clean dark obsidian base + minimalist Pwong 2 environment
+            ctx.fillStyle = '#030408';
             ctx.fillRect(-20, -20, this.viewWidth + 40, this.viewHeight + 40);
 
-            this.renderArenaEnvironment(ctx, pulse);
+            this.renderArenaEnvironment(ctx, pulse, dt);
 
             // 4. Light trails (additive)
             ctx.globalCompositeOperation = 'lighter';
@@ -2606,135 +2690,79 @@ window.PWONYX = window.PWONYX || {};
             }
         }
 
-        renderArenaEnvironment(ctx, pulse) {
-            const bass = Audio.bassEnergy || 0;
+        renderArenaEnvironment(ctx, pulse, dt = 1 / 60) {
             const ax = this.arenaX;
             const ay = this.arenaY;
             const aw = this.arenaWidth;
             const ah = this.arenaHeight;
             const cx = ax + aw * 0.5;
             const cy = ay + ah * 0.5;
-            const padNorm = this.player
-                ? ((this.player.x - cx) / Math.max(1, aw * 0.5))
-                : 0;
+            const rgb = this.themeRgb || '0, 245, 212';
+            const isInferno = this.arenaEvent === 'inferno';
 
-            // A. Abyssal backdrop (Nano Banana ocean sanctuary) with subtle paddle parallax + audio breath
-            const bgReady = this.arenaAbyssBg && this.arenaAbyssBg.loaded && this.arenaAbyssBg.img;
-            const bgImg = bgReady ? this.arenaAbyssBg.img : (this.parallaxBgLoaded ? this.parallaxBgImg : null);
-            if (bgImg) {
-                ctx.save();
-                const zoom = 1.06 + pulse * 0.018;
-                const iw = bgImg.naturalWidth || bgImg.width || 1376;
-                const ih = bgImg.naturalHeight || bgImg.height || 768;
-                const scale = Math.max(this.viewWidth / iw, this.viewHeight / ih) * zoom;
-                const dw = iw * scale;
-                const dh = ih * scale;
-                const dx = (this.viewWidth - dw) * 0.5 - padNorm * 16;
-                const dy = (this.viewHeight - dh) * 0.5 + Math.sin(this.menuTime * 0.35) * 6;
-                ctx.globalAlpha = 0.58;
-                ctx.drawImage(bgImg, dx, dy, dw, dh);
-                ctx.restore();
-            }
+            // A. Clean minimalist dark arena base (#030408)
+            ctx.fillStyle = '#030408';
+            ctx.fillRect(0, 0, this.viewWidth, this.viewHeight);
 
-            // Slow-motion abyssal tint when Chrono-Stasis is active
-            if (this.buffs.slow > 0) {
-                ctx.fillStyle = 'rgba(22, 16, 48, 0.22)';
-                ctx.fillRect(0, 0, this.viewWidth, this.viewHeight);
-            }
+            // B. Ultra-soft ambient radial glow in the shifting scenario color
+            const glowAlpha = isInferno
+                ? Math.min(0.16, 0.10 + pulse * 0.06)
+                : Math.min(0.14, 0.06 + pulse * 0.06);
+            const ambGrad = ctx.createRadialGradient(cx, cy, Math.min(aw, ah) * 0.05, cx, cy, Math.max(aw, ah) * 0.72);
+            ambGrad.addColorStop(0, `rgba(${rgb}, ${glowAlpha})`);
+            ambGrad.addColorStop(1, 'rgba(3, 4, 8, 0)');
+            ctx.fillStyle = ambGrad;
+            ctx.fillRect(0, 0, this.viewWidth, this.viewHeight);
 
-            // B. Drifting cover-art bioluminescent spores behind the arena
-            this.renderFlowParticleLayer(ctx, 0, -padNorm * 14, 0, this.viewWidth, this.viewHeight, this.menuTime, pulse, 0.48);
-
-            // C. Central 4:3 Abyssal Sanctuary Veil
-            ctx.save();
-            const veilGrad = ctx.createRadialGradient(cx, cy, Math.min(aw, ah) * 0.08, cx, cy, Math.max(aw, ah) * 0.72);
-            veilGrad.addColorStop(0, 'rgba(4, 20, 36, 0.38)');
-            veilGrad.addColorStop(1, 'rgba(2, 6, 15, 0.68)');
-            ctx.fillStyle = veilGrad;
-            ctx.fillRect(ax, ay, aw, ah);
-            ctx.restore();
-
-            // D. Psychedelic Zoom-Feedback Layer (Pwong 2 background tunnel)
+            // C. Discreet tunnel feedback layer (reflects only colored ball trails)
             if (this.feedbackMode !== 'off') {
-                const fbAlpha = this.feedbackMode === 'high' ? 0.34 + pulse * 0.14 : 0.18;
+                ctx.save();
+                ctx.globalCompositeOperation = 'screen';
+                const fbAlpha = this.feedbackMode === 'high' ? 0.24 + pulse * 0.08 : 0.12 + pulse * 0.04;
                 ctx.globalAlpha = fbAlpha;
                 ctx.drawImage(this.fbCanvas, 0, 0, this.viewWidth, this.viewHeight);
-                ctx.globalAlpha = 1;
-            }
-
-            // E. Living bioluminescent caustics curtain inside arena ('screen' composite)
-            if (this.arenaCaustics && this.arenaCaustics.loaded && this.arenaCaustics.img) {
-                ctx.save();
-                ctx.beginPath();
-                ctx.rect(ax, ay, aw, ah);
-                ctx.clip();
-                ctx.globalCompositeOperation = 'screen';
-                ctx.globalAlpha = Math.min(0.36, 0.14 + pulse * 0.11 + ((this.comboMultiplier || 1) - 1) * 0.03);
-                const driftX = Math.sin(this.menuTime * 0.24) * 28;
-                const driftY = Math.cos(this.menuTime * 0.19) * 22;
-                ctx.drawImage(this.arenaCaustics.img, ax - 36 + driftX, ay - 36 + driftY, aw + 72, ah + 72);
                 ctx.restore();
             }
 
-            // F. Central Harmonic Resonance Ring + Half-Court Dividing Filament
+            // D. Minimalist court markings (single thin ring + single thin horizontal center line)
             ctx.save();
-            const ringR = 44 + pulse * 10;
-            ctx.strokeStyle = `rgba(0, 245, 212, ${0.14 + pulse * 0.16})`;
-            ctx.lineWidth = 1.4;
+            const ringR = 46 + pulse * 8;
+            ctx.strokeStyle = `rgba(${rgb}, ${0.10 + pulse * 0.06})`;
+            ctx.lineWidth = 1.2;
             ctx.beginPath();
             ctx.arc(cx, cy, ringR, 0, Math.PI * 2);
             ctx.stroke();
 
-            ctx.strokeStyle = `rgba(168, 130, 255, ${0.10 + bass * 0.14})`;
+            ctx.strokeStyle = `rgba(${rgb}, ${0.08 + pulse * 0.05})`;
             ctx.lineWidth = 1;
-            ctx.setLineDash([8, 10]);
             ctx.beginPath();
-            ctx.arc(cx, cy, ringR * 0.68, this.menuTime * 0.5, this.menuTime * 0.5 + Math.PI * 2);
+            ctx.moveTo(ax + 8, cy);
+            ctx.lineTo(cx - ringR, cy);
+            ctx.moveTo(cx + ringR, cy);
+            ctx.lineTo(ax + aw - 8, cy);
             ctx.stroke();
-            ctx.setLineDash([]);
 
             if ((this.comboMultiplier || 1) > 1.01) {
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
                 ctx.font = "800 13px 'Orbitron', system-ui, sans-serif";
-                ctx.fillStyle = `rgba(255, 209, 102, ${0.38 + pulse * 0.22})`;
+                ctx.fillStyle = `rgba(${rgb}, ${0.38 + pulse * 0.22})`;
                 ctx.fillText(`×${this.comboMultiplier.toFixed(2)}`, cx, cy);
             }
-
-            ctx.strokeStyle = `rgba(92, 225, 255, ${0.11 + bass * 0.1})`;
-            ctx.lineWidth = 1;
-            ctx.setLineDash([6, 10]);
-            ctx.beginPath();
-            ctx.moveTo(ax, cy);
-            ctx.lineTo(cx - ringR - 6, cy);
-            ctx.moveTo(cx + ringR + 6, cy);
-            ctx.lineTo(ax + aw, cy);
-            ctx.stroke();
-
-            if (ax > 4) {
-                ctx.strokeStyle = 'rgba(92, 225, 255, 0.035)';
-                ctx.beginPath();
-                ctx.moveTo(0, cy);
-                ctx.lineTo(ax, cy);
-                ctx.moveTo(ax + aw, cy);
-                ctx.lineTo(this.viewWidth, cy);
-                ctx.stroke();
-            }
-            ctx.setLineDash([]);
             ctx.restore();
 
-            // G. Top Goal Barrier Flash
+            // E. Top Goal Barrier Flash
             if (this.goalFlashTop > 0.01) {
                 ctx.save();
-                const goalGrad = ctx.createLinearGradient(0, ay, 0, ay + 64);
-                goalGrad.addColorStop(0, `rgba(0, 245, 212, ${this.goalFlashTop * 0.45})`);
-                goalGrad.addColorStop(1, 'rgba(0, 245, 212, 0)');
+                const goalGrad = ctx.createLinearGradient(0, ay, 0, ay + 56);
+                goalGrad.addColorStop(0, `rgba(${rgb}, ${this.goalFlashTop * 0.42})`);
+                goalGrad.addColorStop(1, `rgba(${rgb}, 0)`);
                 ctx.fillStyle = goalGrad;
-                ctx.fillRect(ax, ay, aw, 64);
+                ctx.fillRect(ax, ay, aw, 56);
                 ctx.restore();
             }
 
-            // H. Bottom Abyssal Aegis Shield Wave Membrane (1P modes)
+            // F. Bottom Abyssal Aegis Shield Wave Membrane (1P modes)
             const aegisActive = !this.mode.isTwoPlayer && this.buffs.shield > 0 && this.shieldCharges > 0;
             if (aegisActive || this.shieldFlashBottom > 0.02) {
                 ctx.save();
@@ -2781,19 +2809,22 @@ window.PWONYX = window.PWONYX || {};
             const fw = this.fbCanvas.width;
             const fh = this.fbCanvas.height;
 
+            // Darken existing feedback cleanly toward deep abyssal obsidian
+            fCtx.globalCompositeOperation = 'source-over';
+            fCtx.fillStyle = 'rgba(2, 7, 16, 0.22)';
+            fCtx.fillRect(0, 0, fw, fh);
+
+            // Overlay zoomed trail layer only (clean neon ball/spark streaks without background or text smear)
             fCtx.save();
-            // Zoom slightly outward on every beat + subtle rotation
             const zoom = 1.022 + pulse * 0.018;
             fCtx.translate(fw / 2, fh / 2);
             fCtx.scale(zoom, zoom);
             fCtx.rotate(0.004);
-            fCtx.globalAlpha = 0.88;
-            fCtx.drawImage(this.canvas, -fw / 2, -fh / 2, fw, fh);
+            fCtx.globalCompositeOperation = 'screen';
+            fCtx.globalAlpha = 0.85;
+            fCtx.drawImage(this.trailCanvas, -fw / 2, -fh / 2, fw, fh);
             fCtx.restore();
-
-            // Darken cleanly toward deep abyssal obsidian
-            fCtx.fillStyle = 'rgba(2, 7, 16, 0.18)';
-            fCtx.fillRect(0, 0, fw, fh);
+            fCtx.globalCompositeOperation = 'source-over';
         }
 
         renderPaddle(ctx, pad, isPlayer, pulse) {
@@ -3021,70 +3052,29 @@ window.PWONYX = window.PWONYX || {};
         }
 
         renderBalls(ctx, pulse = 0) {
-            const beatScale = 1 + pulse * 0.16;
-            const padX = this.player ? this.player.x : this.arenaX + this.arenaWidth * 0.5;
-            const padY = this.player ? this.player.y : this.arenaY + this.arenaHeight - CFG.PADDLE_Y_OFFSET;
+            const beatScale = 1 + pulse * 0.10;
+            const themeColor = this.themeColor || '#00f5d4';
 
             for (let i = 0; i < this.balls.size; i++) {
                 const b = this.balls.items[i];
                 if (!b.active) continue;
 
                 const r = b.radius * beatScale;
-                const ballColor = b.stuckTimer > 0
-                    ? '#ff4da6'
-                    : (b.isCurvedShot ? '#ffd166' : b.color);
 
-                // Sticky Magnet tether linking latched ball to paddle core
-                if (b.stuckTimer > 0) {
-                    ctx.save();
-                    ctx.strokeStyle = 'rgba(255, 77, 166, 0.78)';
-                    ctx.lineWidth = 2;
-                    ctx.beginPath();
-                    ctx.moveTo(padX, padY - 6);
-                    ctx.lineTo(b.x, b.y);
-                    ctx.stroke();
-                    ctx.restore();
-                }
-
-                // Soft plasma outer aura
-                const auraGrad = ctx.createRadialGradient(b.x, b.y, r * 0.2, b.x, b.y, r * 2.15);
-                auraGrad.addColorStop(0, `${ballColor}aa`);
-                auraGrad.addColorStop(0.45, `${ballColor}38`);
+                // Subtle soft halo tinted lightly with the scenario color (keeps trail cohesive)
+                const auraGrad = ctx.createRadialGradient(b.x, b.y, r * 0.25, b.x, b.y, r * 1.9);
+                auraGrad.addColorStop(0, 'rgba(255, 255, 255, 0.55)');
+                auraGrad.addColorStop(0.45, `${themeColor}30`);
                 auraGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
                 ctx.fillStyle = auraGrad;
                 ctx.beginPath();
-                ctx.arc(b.x, b.y, r * 2.15, 0, Math.PI * 2);
+                ctx.arc(b.x, b.y, r * 1.9, 0, Math.PI * 2);
                 ctx.fill();
 
-                // Spinning vortex ring on Magnus curved shots or beat pulses
-                if (b.isCurvedShot || pulse > 0.45) {
-                    ctx.save();
-                    ctx.translate(b.x, b.y);
-                    ctx.rotate(this.menuTime * (b.isCurvedShot ? 9 : 3));
-                    ctx.strokeStyle = ballColor;
-                    ctx.globalAlpha = b.isCurvedShot ? 0.78 : (pulse - 0.35) * 0.65;
-                    ctx.lineWidth = b.isCurvedShot ? 1.8 : 1.4;
-                    if (b.isCurvedShot) ctx.setLineDash([5, 4]);
-                    ctx.beginPath();
-                    ctx.arc(0, 0, r * 1.48, 0, Math.PI * 2);
-                    ctx.stroke();
-                    ctx.restore();
-                }
-
-                // Colored plasma orb + bright pearl core + specular glint
-                ctx.fillStyle = ballColor;
-                ctx.beginPath();
-                ctx.arc(b.x, b.y, r, 0, Math.PI * 2);
-                ctx.fill();
-
-                ctx.fillStyle = '#f2ffff';
-                ctx.beginPath();
-                ctx.arc(b.x, b.y, r * 0.56, 0, Math.PI * 2);
-                ctx.fill();
-
+                // Pure white ball body (Pwong 2 classic signature)
                 ctx.fillStyle = '#ffffff';
                 ctx.beginPath();
-                ctx.arc(b.x - r * 0.22, b.y - r * 0.22, r * 0.22, 0, Math.PI * 2);
+                ctx.arc(b.x, b.y, r, 0, Math.PI * 2);
                 ctx.fill();
             }
         }
@@ -3127,8 +3117,10 @@ window.PWONYX = window.PWONYX || {};
         renderReactiveBorder(ctx, pulse, high) {
             ctx.save();
             const flash = this.chromaticFlash > 0.1;
-            const primaryColor = flash ? '#ff2a6d' : '#00f5d4';
-            const accentColor = flash ? '#ff2a6d' : '#5ce1ff';
+            const themeHex = this.themeColor || '#00f5d4';
+            const themeRgb = this.themeRgb || '0, 245, 212';
+            const primaryColor = flash ? '#ff2a6d' : themeHex;
+            const accentColor = flash ? '#ff2a6d' : themeHex;
             const glowBlur = 10 + pulse * 14 + high * 8;
 
             const ax = this.arenaX;
@@ -3197,10 +3189,10 @@ window.PWONYX = window.PWONYX || {};
 
             // 3. Top Goal Matrix Filament (1P barrier glow) & Bottom Defense Line
             ctx.shadowBlur = !this.mode.isTwoPlayer ? (6 + this.goalFlashTop * 14) : 0;
-            ctx.shadowColor = '#00f5d4';
+            ctx.shadowColor = themeHex;
             ctx.lineWidth = !this.mode.isTwoPlayer ? (1.8 + this.goalFlashTop * 2.2) : 1.0;
             ctx.strokeStyle = !this.mode.isTwoPlayer
-                ? `rgba(0, 245, 212, ${0.32 + pulse * 0.22 + this.goalFlashTop * 0.46})`
+                ? `rgba(${themeRgb}, ${0.32 + pulse * 0.22 + this.goalFlashTop * 0.46})`
                 : `rgba(255, 255, 255, ${0.12 + pulse * 0.14})`;
             ctx.setLineDash(this.mode.isTwoPlayer ? [4, 8] : [14, 6]);
             ctx.beginPath();
@@ -3210,7 +3202,7 @@ window.PWONYX = window.PWONYX || {};
 
             ctx.shadowBlur = 0;
             ctx.lineWidth = 1;
-            ctx.strokeStyle = `rgba(92, 225, 255, ${0.14 + pulse * 0.14})`;
+            ctx.strokeStyle = `rgba(${themeRgb}, ${0.14 + pulse * 0.14})`;
             ctx.setLineDash([4, 8]);
             ctx.beginPath();
             ctx.moveTo(ax, ay + ah);
@@ -3221,14 +3213,14 @@ window.PWONYX = window.PWONYX || {};
             // 4. Peripheral side ambiance when on widescreen (ax > 4)
             if (ax > 4) {
                 const leftGrad = ctx.createLinearGradient(0, 0, ax, 0);
-                leftGrad.addColorStop(0, 'rgba(2, 6, 17, 0.72)');
-                leftGrad.addColorStop(1, 'rgba(2, 6, 17, 0)');
+                leftGrad.addColorStop(0, 'rgba(3, 4, 8, 0.72)');
+                leftGrad.addColorStop(1, 'rgba(3, 4, 8, 0)');
                 ctx.fillStyle = leftGrad;
                 ctx.fillRect(0, 0, ax, this.viewHeight);
 
                 const rightGrad = ctx.createLinearGradient(ax + aw, 0, this.viewWidth, 0);
-                rightGrad.addColorStop(0, 'rgba(2, 6, 17, 0)');
-                rightGrad.addColorStop(1, 'rgba(2, 6, 17, 0.72)');
+                rightGrad.addColorStop(0, 'rgba(3, 4, 8, 0)');
+                rightGrad.addColorStop(1, 'rgba(3, 4, 8, 0.72)');
                 ctx.fillStyle = rightGrad;
                 ctx.fillRect(ax + aw, 0, this.viewWidth - (ax + aw), this.viewHeight);
             }
