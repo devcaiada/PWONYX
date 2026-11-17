@@ -33,10 +33,10 @@ window.PWONYX.CONFIG = {
             aiReaction: 0.68,
             scoreMultiplier: 1.0,
             startAmmo: 2,
-            ammoPerPickup: 10,
-            maxAmmo: 99,
+            ammoPerPickup: 5,
+            maxAmmo: 15,
             ammoSpawnInterval: 3.6,
-            specialPowerInterval: 11.0,
+            specialPowerInterval: 8.0,
             color: '#00f5d4'
         },
         medium: {
@@ -52,10 +52,10 @@ window.PWONYX.CONFIG = {
             aiReaction: 0.82,
             scoreMultiplier: 1.5,
             startAmmo: 2,
-            ammoPerPickup: 10,
-            maxAmmo: 99,
+            ammoPerPickup: 5,
+            maxAmmo: 15,
             ammoSpawnInterval: 4.2,
-            specialPowerInterval: 13.0,
+            specialPowerInterval: 9.0,
             color: '#00bbf9'
         },
         hard: {
@@ -71,10 +71,10 @@ window.PWONYX.CONFIG = {
             aiReaction: 0.92,
             scoreMultiplier: 2.2,
             startAmmo: 2,
-            ammoPerPickup: 10,
-            maxAmmo: 99,
+            ammoPerPickup: 5,
+            maxAmmo: 15,
             ammoSpawnInterval: 4.8,
-            specialPowerInterval: 14.5,
+            specialPowerInterval: 10.0,
             color: '#fee440'
         },
         extreme: {
@@ -90,10 +90,10 @@ window.PWONYX.CONFIG = {
             aiReaction: 0.96,
             scoreMultiplier: 3.2,
             startAmmo: 2,
-            ammoPerPickup: 10,
-            maxAmmo: 99,
+            ammoPerPickup: 5,
+            maxAmmo: 15,
             ammoSpawnInterval: 5.4,
-            specialPowerInterval: 16.0,
+            specialPowerInterval: 11.0,
             color: '#ff6b35'
         },
         insane: {
@@ -109,10 +109,10 @@ window.PWONYX.CONFIG = {
             aiReaction: 0.99,
             scoreMultiplier: 5.0,
             startAmmo: 2,
-            ammoPerPickup: 10,
-            maxAmmo: 99,
+            ammoPerPickup: 5,
+            maxAmmo: 15,
             ammoSpawnInterval: 6.0,
-            specialPowerInterval: 17.5,
+            specialPowerInterval: 12.0,
             color: '#ff007f'
         },
         survival: {
@@ -128,10 +128,10 @@ window.PWONYX.CONFIG = {
             aiReaction: 0.74,
             scoreMultiplier: 2.5,
             startAmmo: 2,
-            ammoPerPickup: 10,
-            maxAmmo: 99,
+            ammoPerPickup: 5,
+            maxAmmo: 15,
             ammoSpawnInterval: 4.2,
-            specialPowerInterval: 13.5,
+            specialPowerInterval: 9.5,
             isSurvival: true,
             color: '#9b5de5'
         },
@@ -148,10 +148,10 @@ window.PWONYX.CONFIG = {
             aiReaction: 1.0,
             scoreMultiplier: 2.0,
             startAmmo: 2,
-            ammoPerPickup: 10,
-            maxAmmo: 99,
+            ammoPerPickup: 5,
+            maxAmmo: 15,
             ammoSpawnInterval: 4.5,
-            specialPowerInterval: 14.0,
+            specialPowerInterval: 9.5,
             isTwoPlayer: true,
             color: '#f15bb5'
         }
@@ -182,7 +182,7 @@ window.PWONYX.CONFIG = {
         {
             id: 'powerupDuration',
             name: 'Maestria de Bônus & Munição',
-            desc: 'Aumenta a duração dos Power-Ups, frequência de queda e capacidade máxima de munição do Ghost Paddle.',
+            desc: 'Aumenta a duração dos Power-Ups e a frequência de queda de itens e munições na arena.',
             icon: '⚡',
             maxLevel: 8,
             baseCost: 140,
@@ -205,8 +205,8 @@ window.PWONYX.CONFIG = {
     POWERUPS: {
         ammo: {
             id: 'ammo',
-            label: '+GHOST AMMO',
-            shortLabel: '+AMMO',
+            label: '+5 GHOST AMMO',
+            shortLabel: '+5 AMMO',
             symbol: '👻',
             color: '#00f5d4',
             radius: 14
